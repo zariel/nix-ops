@@ -50,7 +50,16 @@ in
     enable = true;
     package = pkgs.ollama-cuda;
     host = "0.0.0.0";
-    loadModels = [ "qwen3:4b-instruct" ];
-    environmentVariables.OLLAMA_KEEP_ALIVE = "1m";
+    loadModels = [
+      "qwen3:4b-instruct"
+      "qwen3-vl:4b-instruct"
+      "embeddinggemma:300m"
+    ];
+    environmentVariables = {
+      OLLAMA_CONTEXT_LENGTH = "8192";
+      OLLAMA_NUM_PARALLEL = "1";
+      OLLAMA_MAX_LOADED_MODELS = "2";
+      OLLAMA_KEEP_ALIVE = "1m";
+    };
   };
 }
