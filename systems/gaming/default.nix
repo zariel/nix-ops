@@ -36,7 +36,6 @@ in
     };
 
     consoleLogLevel = 3;
-    initrd.verbose = false;
     kernelPackages = pkgs.linuxPackages_latest;
     kernelParams = [
       "intel_idle.max_cstate=1"
