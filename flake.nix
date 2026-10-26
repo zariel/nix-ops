@@ -164,6 +164,7 @@
 
       nixosConfigurations = {
         trusted-backup = mkSystem { name = "trusted-backup"; };
+        gateway = mkSystem { name = "gateway"; };
         dns1 = mkSystem {
           name = "dns1";
           extraModules = [ ./roles/server ];
@@ -203,6 +204,10 @@
           name = "trusted-backup";
           addr = "10.254.254.2";
         };
+        gateway = mkDeploy {
+          name = "gateway";
+          addr = "10.1.0.1";
+        };
         ash = mkDeploy {
           name = "ash";
           addr = "10.1.1.55";
@@ -231,11 +236,10 @@
           formatting = treefmtEval.${system}.config.build.check self;
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") (
-          deploy-rs.lib.x86_64-linux.deployChecks self.deploy
+          (deploy-rs.lib.x86_64-linux.deployChecks self.deploy)
           // {
-            dns-vip = import ./tests/dns-vip.nix {
-              pkgs = import nixpkgs { inherit system; };
-            };
+            dns-vip = import ./tests/dns-vip.nix { pkgs = import nixpkgs { inherit system; }; };
+            gateway = import ./tests/gateway.nix { pkgs = import nixpkgs { inherit system; }; };
           }
         )
       );
