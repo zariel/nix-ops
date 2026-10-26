@@ -80,10 +80,11 @@ in
         system = "x86_64-linux";
         sshUser = "nix-remote-builder";
         sshKey = "/var/lib/nix-remote-builder/id_ed25519";
-        publicHostKey = "AAAAC3NzaC1lZDI1NTE5AAAAIGHcCpiRC/tkGOIxAM4bSjiasAIFzxTj9iDxhsxo/kNK";
+        # Nix expects base64 of the complete OpenSSH public key, including its type.
+        publicHostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUdIY0NwaVJDL3RrR09JeEFNNGJTamlhc0FJRnp4VGo5aUR4aHN4by9rTks=";
         protocol = "ssh";
-        maxJobs = 8; # EPYC remote builder VM capacity
-        speedFactor = 8; # Strongly prefer remote builder over local builds
+        maxJobs = 2; # Match the builder's concurrency budget for 16 GiB RAM.
+        speedFactor = 8;
         supportedFeatures = [
           "nixos-test"
           "benchmark"

@@ -23,14 +23,15 @@
 
   # Builder-specific nix settings
   nix.settings = {
-    # Build parallelism - 8 CPUs, 16GB RAM
-    max-jobs = 4;
-    cores = 2;
+    # Let a large build use all 8 vCPUs while limiting competition for 16 GiB RAM.
+    max-jobs = 2;
+    cores = 0;
     extra-sandbox-paths = [ config.programs.ccache.cacheDir ];
 
-    # Garbage collection thresholds
-    min-free = lib.mkDefault (2 * 1024 * 1024 * 1024); # 2GB
-    max-free = lib.mkDefault (20 * 1024 * 1024 * 1024); # 20GB
+    # Retain build results until disk pressure, reserving room for ncps's 100G
+    # cache and build scratch space on the same filesystem.
+    min-free = lib.mkDefault (128 * 1024 * 1024 * 1024);
+    max-free = lib.mkDefault (192 * 1024 * 1024 * 1024);
   };
 
   programs.ccache.enable = true;
@@ -44,12 +45,9 @@
     "nix-remote-builder"
   ];
 
-  # Automatic garbage collection
-  nix.gc = {
-    automatic = true;
-    dates = "daily";
-    options = "--delete-older-than 7d";
-  };
+  # Remote results have no persistent client roots here. A scheduled sweep would
+  # discard the shared cache regardless of how much disk space remains.
+  nix.gc.automatic = false;
 
   # Additional SSH key for nix-daemon
   users.users.chris.openssh.authorizedKeys.keys = lib.mkAfter [
@@ -75,99 +73,36 @@
 
   services.qemuGuest.enable = true;
 
-  # Binary cache service
+  # Serve local build results to the pull-through cache.
   services.harmonia.cache = {
     enable = true;
     signKeyPaths = [ "/var/lib/secrets/harmonia-key" ];
     settings = {
-      bind = "0.0.0.0:5000";
-      priority = 30; # Prefer the LAN cache over cache.nixos.org (40).
+      bind = "127.0.0.1:5001";
+      priority = 30;
     };
   };
 
-  # Cache warming service - periodically builds all system configurations
-  # This ensures Harmonia's cache stays warm for offline deployments
-  systemd.services.cache-warmer = {
-    description = "Build all NixOS configurations to warm Harmonia cache";
-    path = with pkgs; [
-      nix
-      git
-      jq
-    ];
-    serviceConfig = {
-      Type = "oneshot";
-      User = "chris";
-      StateDirectory = "cache-warmer";
-      TimeoutSec = "4h"; # Allow time for first run downloads/builds
+  services.ncps = {
+    enable = true;
+    server.addr = "0.0.0.0:5000";
+    analytics.reporting.enable = false;
+    cache = {
+      hostName = "builder.cbannister.casa";
+      # Keep client trust when serving either local or upstream paths.
+      secretKeyPath = "/var/lib/secrets/harmonia-key";
+      maxSize = "100G";
+      lru.schedule = "*/15 * * * *";
+      upstream = {
+        # The builder's substituters exclude this endpoint, preventing a loop.
+        urls = [ "http://127.0.0.1:5001" ] ++ config.nix.settings.substituters;
+        publicKeys = config.nix.settings.trusted-public-keys;
+      };
     };
-    script = ''
-      set -euo pipefail
-
-      REPO_DIR="/home/chris/nix-ops"
-      failed=0
-
-      # Clone or update repository
-      if [ ! -d "$REPO_DIR" ]; then
-        echo "Cloning nix-ops repository..."
-        git clone https://github.com/Zariel/nix-ops.git "$REPO_DIR" || {
-          echo "Failed to clone repository"
-          exit 1
-        }
-      else
-        echo "Updating nix-ops repository..."
-        cd "$REPO_DIR"
-        git pull || {
-          echo "Failed to pull updates, using existing version"
-          failed=1
-        }
-      fi
-
-      cd "$REPO_DIR"
-
-      # Build all system configurations
-      # Keep each system's last successful closure rooted for Harmonia.
-      echo "Discovering nixosConfigurations from flake..."
-      SYSTEMS=$(nix eval "$REPO_DIR#nixosConfigurations" --apply builtins.attrNames --json | jq -r '.[]')
-
-      if [ -z "$SYSTEMS" ]; then
-        echo "Error: No systems found in flake"
-        exit 1
-      fi
-
-      echo "Found systems: $(echo $SYSTEMS | tr '\n' ' ')"
-      echo "Building system configurations..."
-
-      for system in $SYSTEMS; do
-        echo "Building $system..."
-        nix build ".#nixosConfigurations.$system.config.system.build.toplevel" \
-          --out-link "$STATE_DIRECTORY/result-$system" \
-          --print-build-logs \
-          --keep-going || {
-          echo "Warning: Failed to build $system, continuing..."
-          failed=1
-        }
-      done
-
-      if [ "$failed" -ne 0 ]; then
-        echo "Cache warming incomplete - repository update or system builds failed"
-        exit 1
-      fi
-
-      echo "Cache warming complete - all builds available via Harmonia at http://10.1.1.155:5000"
-    '';
   };
 
-  systemd.timers.cache-warmer = {
-    enable = false;
-    description = "Timer for periodic cache warming builds";
-    wantedBy = [ "timers.target" ];
-    timerConfig = {
-      # Run hourly
-      OnCalendar = "hourly";
-      # Run on boot if missed during downtime
-      Persistent = true;
-      # Randomize start time within 5 minutes to avoid thundering herd
-      RandomizedDelaySec = "5m";
-    };
+  systemd.services.ncps = {
+    requires = [ "harmonia.socket" ];
+    after = [ "harmonia.socket" ];
   };
 }

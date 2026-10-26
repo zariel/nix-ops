@@ -14,9 +14,7 @@
       "flakes"
     ];
 
-    # Tarball cache TTL - keep flake inputs cached for 7 days
-    # This allows offline deployments as long as flake.lock hasn't changed
-    # and the cache was warmed within the last week
+    # Reuse unchanged flake inputs for a week.
     tarball-ttl = 604800; # 7 days in seconds
 
     # Binary cache settings
@@ -24,7 +22,7 @@
     # Local cache is checked first for fastest builds
     substituters = lib.mkBefore (
       lib.optionals (config.networking.hostName != "nix-builder") [
-        "http://10.1.1.155:5000"
+        "http://10.1.1.155:5000?priority=30"
       ]
       ++ [
         "https://nix-community.cachix.org"
