@@ -165,6 +165,7 @@ in
           Mod+B { spawn "${pkgs.firefox}/bin/firefox"; }
           Mod+N { spawn "${pkgs.swaynotificationcenter}/bin/swaync-client" "-t" "-sw"; }
           Mod+Shift+N { spawn "${pkgs.swaynotificationcenter}/bin/swaync-client" "-d" "-sw"; }
+          Mod+Ctrl+N allow-inhibiting=false repeat=false { spawn "night-light" "toggle"; }
           Mod+Alt+L { spawn-sh "${lockCommand}"; }
           Mod+Shift+E { spawn "${powerMenu}/bin/power-menu"; }
           Mod+Ctrl+Shift+E { quit; }

@@ -398,6 +398,7 @@ in
       modules-right = [
         "privacy"
         "custom/gamemode"
+        "custom/night-light"
         "systemd-failed-units"
         "idle_inhibitor"
         "custom/notifications"
@@ -541,6 +542,7 @@ in
       #custom-niri-stack,
       #privacy,
       #custom-gamemode,
+      #custom-night-light,
       #systemd-failed-units,
       #idle_inhibitor,
       #custom-notifications,
@@ -582,11 +584,13 @@ in
       }
 
       #privacy-item.screenshare,
+      #custom-night-light.enabled,
       #idle_inhibitor.activated {
         color: #f9e2af;
       }
 
       #privacy-item.audio-in,
+      #custom-night-light.failed,
       #systemd-failed-units.degraded {
         color: #f38ba8;
       }
@@ -597,7 +601,8 @@ in
         color: #cba6f7;
       }
 
-      #idle_inhibitor.deactivated {
+      #idle_inhibitor.deactivated,
+      #custom-night-light.disabled {
         color: #6c7086;
       }
 
