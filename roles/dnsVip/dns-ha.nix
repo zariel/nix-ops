@@ -9,6 +9,7 @@ with lib;
 
 let
   cfg = config.services.dnsHealthcheck;
+  gatewayAddress = import ./gateway-address.nix;
 
   healthCheckScript = pkgs.writeShellScript "dns-health-check" ''
     set -euo pipefail
@@ -36,7 +37,7 @@ let
       bind_answer=$(timeout "$DNS_TIMEOUT" ${pkgs.dnsutils}/bin/dig \
         @127.0.0.1 -p "$HEALTH_CHECK_PORT" gateway.cbannister.casa A \
         +short +tries=1 +time="$DNS_TIMEOUT" 2>/dev/null) || return 1
-      [ "$bind_answer" = "10.1.0.1" ] || return 1
+      [ "$bind_answer" = "${gatewayAddress}" ] || return 1
 
       # Validate Blocky's filtering engine directly with a deterministic local
       # denylist entry. This remains healthy when external resolvers are down.

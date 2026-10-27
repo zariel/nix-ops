@@ -406,6 +406,17 @@ in
   programs._1password.enable = true;
   programs._1password-gui = {
     enable = true;
+    package = pkgs._1password-gui.overrideAttrs (old: {
+      postInstall = (old.postInstall or "") + ''
+        # These bundled helpers also need Nix's loader and library paths.
+        interpreter="$(patchelf --print-interpreter "$out/share/1password/1password")"
+        rpath="$(patchelf --print-rpath "$out/share/1password/1password")"
+        for helper in chrome_crashpad_handler 1Password-Crash-Handler 1password-mcp chrome-sandbox; do
+          patchelf --set-interpreter "$interpreter" "$out/share/1password/$helper"
+          patchelf --set-rpath "$rpath" "$out/share/1password/$helper"
+        done
+      '';
+    });
     # Certain features, including CLI integration and system authentication support,
     # require enabling PolKit integration on some desktop environments (e.g. Plasma).
     polkitPolicyOwners = [ "chris" ];

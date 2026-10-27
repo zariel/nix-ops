@@ -250,7 +250,7 @@ in
       PartOf = [ "graphical-session.target" ];
     };
     Service = {
-      ExecStart = "${pkgs._1password-gui}/bin/1password --silent";
+      ExecStart = "${osConfig.programs._1password-gui.package}/bin/1password --silent";
       Restart = "on-failure";
       RestartSec = 5;
     };

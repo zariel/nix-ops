@@ -13,7 +13,7 @@ $ORIGIN cbannister.casa.
 @                        IN  NS gateway.cbannister.casa.
 
 ; LAN
-gateway                  IN  A  10.1.0.1
+gateway                  IN  A  @GATEWAY_ADDRESS@
 pikvm                    IN  A  10.1.0.100
 
 ; servers

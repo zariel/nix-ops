@@ -9,6 +9,7 @@ with lib;
 
 let
   cfg = config.services.dnsVip;
+  gatewayAddress = import ./gateway-address.nix;
   bindZoneChecks = attrsets.mapAttrsToList (
     zoneName: zoneCfg: "${pkgs.bind}/bin/named-checkzone ${zoneName} ${zoneCfg.file}"
   ) config.services.bind.zones;
@@ -53,7 +54,11 @@ in
       zones = {
         "cbannister.casa" = {
           master = true;
-          file = ./files/bind/zones/db.cbannister.casa;
+          file = pkgs.writeText "db.cbannister.casa" (
+            builtins.replaceStrings [ "@GATEWAY_ADDRESS@" ] [ gatewayAddress ] (
+              builtins.readFile ./files/bind/zones/db.cbannister.casa
+            )
+          );
         };
 
         "unifi" = {
