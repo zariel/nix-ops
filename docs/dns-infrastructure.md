@@ -130,7 +130,7 @@ The health check should **NOT** withdraw VIP for:
 **File**: `roles/dnsVip/dns-ha.nix`
 
 **Health Check Queries**:
-- `gateway.cbannister.casa` through dnsdist must return exactly `10.1.0.1`, validating dnsdist → Bind → local zone.
+- `gateway.cbannister.casa` through dnsdist must return exactly `10.254.254.1`, validating dnsdist → Bind → local zone.
 - `blocky-healthcheck.invalid` directly through Blocky must return exactly `0.0.0.0`, validating the local filtering engine.
 - The Blocky test name is a deterministic local denylist entry and does not depend on a downloaded list or Internet resolution.
 

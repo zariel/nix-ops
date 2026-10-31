@@ -2,7 +2,7 @@
 $TTL 3600
 $ORIGIN unifi.
 @ 3600 IN SOA gateway.cbannister.casa. gateway.cbannister.casa. (
-  1690965199         ; serial number (epoch timestamp)
+  1793477572         ; serial number (epoch timestamp)
   7200               ; refresh period
   3600               ; retry period
   1209600            ; expire time
@@ -12,5 +12,5 @@ $ORIGIN unifi.
 ; NS Records
 @                          IN  NS gateway.cbannister.casa.
 
-; CNAME Records
-@                          IN  A  10.5.0.10
+; Controller discovery
+@                          IN  A  10.1.0.23
