@@ -490,6 +490,8 @@ in
     config.boot.kernelPackages.turbostat
     caligula
     mstflint
+    tcpdump
+    wireshark-cli
     # inputs.nixpkgs-gamma.legacyPackages.${pkgs.system}.gamma-launcher
     #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
     #  wget
