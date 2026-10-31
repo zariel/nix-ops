@@ -76,11 +76,14 @@ an outage for its initial OS replacement and eventual kernel maintenance.
 - `rescue0` is left unnumbered. The live router had `10.1.0.1/24` on both this unplugged
   NIC and VLAN 100. Management remains on VLAN 100; using a rescue NIC needs its
   own non-overlapping subnet and explicit firewall access.
-- IPv6 retains the live ULA networks and WAN /56 delegation into `dum99` (subnet
-  ID 99). It does not adopt the repository's newer, unapplied WireGuard IPv6
-  peer allowance or delegate global prefixes to LANs from the obsolete VLAN 99.
-  WAN RA acceptance is explicit so an IPv6 default route can be learned. A new
-  system's DHCPv6 DUID can change the ISP lease/prefix; verify it at cutover.
+- WAN IPv6 DHCP/RA and prefix assignment to `dum99` are disabled by
+  `ipv6WanEnabled` in `network.nix` until Hyperoptic fixes its failing advertised
+  upstream gateway. Trusted and IoT retain ULA addressing and advertisements
+  for Matter, including site and Thread routes, with no IPv6 default route.
+  IPv6 DNS advertisements remain disabled until the DNS VIP is reachable
+  through the ICX. ISP global prefixes are not advertised to LANs. The planned
+  /56 delegation settings remain provisioned; verify the lease/prefix when
+  enabling WAN IPv6 because a new DHCPv6 DUID can change the ISP allocation.
 - DNS interception follows the live router: IPv4 IoT/WireGuard, IPv6 IoT/trusted.
   IPv4 trusted DNS is not intercepted. The management NTP redirect now matches
   `bond0.100`, correcting the old `bond0` match.

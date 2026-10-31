@@ -1,5 +1,10 @@
 { lib, ... }:
 let
+  # Hyperoptic advertises two equal-preference IPv6 default routers, but one
+  # drops traffic from the delegated prefix (confirmed 2026-10-30). Keep WAN
+  # IPv6 off until the ISP fixes it; trusted/IoT ULA must stay available for
+  # Matter independently of WAN connectivity.
+  ipv6WanEnabled = false;
   vlans = {
     "10" = {
       addresses = [ "10.1.1.1/24" ];
@@ -43,10 +48,7 @@ in
 {
   networking.useDHCP = false;
   networking.networkmanager.enable = false;
-  networking.nameservers = [
-    "1.1.1.1"
-    "2606:4700:4700::1111"
-  ];
+  networking.nameservers = [ "1.1.1.1" ] ++ lib.optional ipv6WanEnabled "2606:4700:4700::1111";
   services.resolved.enable = true;
   boot.kernel.sysctl = {
     "net.ipv4.ip_forward" = 1;
@@ -166,8 +168,8 @@ in
       "30-wan" = {
         matchConfig.Name = "wan0";
         networkConfig = {
-          DHCP = "yes";
-          IPv6AcceptRA = true;
+          DHCP = if ipv6WanEnabled then "yes" else "ipv4";
+          IPv6AcceptRA = ipv6WanEnabled;
         };
         dhcpV4Config = {
           UseDNS = false;
@@ -207,7 +209,7 @@ in
       "30-dum99" = {
         matchConfig.Name = "dum99";
         networkConfig = {
-          DHCPPrefixDelegation = true;
+          DHCPPrefixDelegation = ipv6WanEnabled;
           ConfigureWithoutCarrier = true;
           IPv6AcceptRA = false;
         };
@@ -258,11 +260,19 @@ in
                 IPv6SendRA = true;
               };
               ipv6SendRAConfig = {
-                DNS = [ "fd74:f571:d3bd:53::53" ];
+                # Advertise internal routes without claiming Internet reachability.
+                RouterLifetimeSec = if ipv6WanEnabled then "30min" else "0";
                 RouterPreference = "high";
+                # The DNS VIP needs IPv6 routing through the ICX before use.
+                EmitDNS = false;
+                DNS = [ "fd74:f571:d3bd:53::53" ];
               };
               ipv6Prefixes = [ { Prefix = "fd74:f571:d3bd:${id}::/64"; } ];
-              ipv6RoutePrefixes = [ { Route = "fd74:f571:d3bd::/48"; } ];
+              ipv6RoutePrefixes = [
+                { Route = "fd74:f571:d3bd::/48"; }
+                # The Thread border router uses a separate ULA prefix.
+                { Route = "fd42:dfb5:24e4:1::/64"; }
+              ];
             }
       )
     ) vlans;
