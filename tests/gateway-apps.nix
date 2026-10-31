@@ -7,6 +7,15 @@ pkgs.testers.runNixOSTest {
       ../systems/gateway/firewall.nix
       ../systems/gateway/apps.nix
     ];
+    systemd.network.wait-online.enable = false;
+    containers.unifi.config.systemd.services.hold-ready = {
+      unitConfig.ConditionPathExists = "!/var/lib/unifi/network-test-released";
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.coreutils}/bin/sleep infinity";
+      };
+    };
     virtualisation.memorySize = 3072;
     virtualisation.vlans = [ 1 ];
     networking.useDHCP = false;
@@ -55,6 +64,11 @@ pkgs.testers.runNixOSTest {
     router.wait_for_unit("frr.service")
     fabric.wait_for_unit("frr.service")
     router.succeed("ip link set eth1 name bond0.3001")
+    # Networking must work while the container is still initializing.
+    fabric.wait_until_succeeds("ip route show 10.5.0.10/32 | grep 'via 10.254.0.0'")
+    router.succeed("systemctl show container@unifi.service -p ActiveState --value | grep -x activating")
+    router.succeed("touch /var/lib/gateway/unifi-native/network-test-released")
+    router.succeed("nixos-container run unifi -- systemctl stop hold-ready")
     router.wait_for_unit("container@matchbox.service")
     router.wait_until_succeeds("curl -fsS --max-time 2 http://10.5.0.8/assets/probe | grep gateway-app-probe")
     router.wait_until_succeeds("curl -kfsS --max-time 2 https://10.5.0.10:8443")
@@ -70,6 +84,13 @@ pkgs.testers.runNixOSTest {
     router.succeed("ip route add 172.20.0.11/32 via 10.254.0.1")
     fabric.succeed("curl --interface 172.20.0.11 -fsS --max-time 2 http://10.5.0.11:9798 | grep Speedtest-Exporter")
     fabric.fail("curl -fsS --max-time 2 http://10.5.0.11:9798")
+
+    # Preserve an operator-supplied inform address, including one behind NAT.
+    router.succeed("nixos-container run unifi -- systemctl stop unifi")
+    router.succeed("echo system_ip=192.0.2.10 >> /var/lib/gateway/unifi-native/data/system.properties")
+    router.succeed("systemctl restart container@unifi.service")
+    router.wait_until_succeeds("curl -kfsS --max-time 2 https://10.5.0.10:8443")
+    router.succeed("grep -Fx system_ip=192.0.2.10 /var/lib/gateway/unifi-native/data/system.properties")
 
     # Export only service /32 routes, not unrelated kernel routes or subnets.
     router.succeed("ip route add 198.18.0.8/32 dev ve-matchbox; ip route add 10.5.0.128/25 dev ve-matchbox; ip route add 10.5.0.9/32 dev ve-matchbox")

@@ -31,7 +31,8 @@ let
         users.groups.matchbox = { };
         systemd.services.matchbox = {
           wantedBy = [ "multi-user.target" ];
-          after = [ "network.target" ];
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
           serviceConfig = {
             ExecStart = "${pkgs.matchbox-server}/bin/matchbox -address=0.0.0.0:80 -log-level=info";
             User = "matchbox";
@@ -45,6 +46,8 @@ let
     };
     unifi = {
       address = "10.5.0.10";
+      # Java and MongoDB initialization can exceed nspawn's one-minute deadline.
+      timeoutStartSec = "3min";
       # Restore an application backup into fresh native state; the OCI MongoDB
       # files belong to a different MongoDB major and must not be opened here.
       mounts."/var/lib/unifi" = {
@@ -52,18 +55,15 @@ let
         isReadOnly = false;
       };
       module = {
+        systemd.services.unifi = {
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+        };
         services.unifi = {
           enable = true;
           unifiPackage = unifi;
           jrePackage = pkgs.jdk17_headless;
         };
-        systemd.services.unifi.preStart = ''
-          # Keep device inform traffic on the service identity after backup restore.
-          touch /var/lib/unifi/data/system.properties
-          ${pkgs.gnused}/bin/sed -i '/^system_ip=/d' /var/lib/unifi/data/system.properties
-          echo 'system_ip=${applications.unifi.address}' >> /var/lib/unifi/data/system.properties
-        '';
-        systemd.tmpfiles.rules = [ "d /var/lib/unifi/data 0700 unifi unifi -" ];
       };
     };
     speedtest = {
@@ -72,7 +72,8 @@ let
       module = {
         systemd.services.speedtest-exporter = {
           wantedBy = [ "multi-user.target" ];
-          after = [ "network.target" ];
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
           path = [ pkgs.ookla-speedtest ];
           serviceConfig = {
             ExecStart = "${speedtestPython}/bin/python -u ${speedtestSource}";
@@ -87,19 +88,55 @@ let
   };
 in
 {
-  # NixOS owns veths and /32 kernel routes for the lifetime of each container.
-  # FRR exports that route pool, so no application needs a BGP network statement.
+  # Configure host routing when each veth appears, before container readiness.
+  systemd.network.enable = true;
+  systemd.network.networks = lib.mapAttrs' (
+    name: app:
+    lib.nameValuePair "30-app-${name}" {
+      matchConfig.Name = "ve-${name}";
+      address = [ "10.5.0.1/32" ];
+      networkConfig = {
+        LinkLocalAddressing = "no";
+        IPv6AcceptRA = false;
+      };
+      routes = [
+        {
+          Destination = "${app.address}/32";
+          Scope = "link";
+          # FRR imports these externally managed kernel routes.
+          Protocol = "boot";
+        }
+      ];
+    }
+  ) applications;
   containers = lib.mapAttrs (_: app: {
+    timeoutStartSec = app.timeoutStartSec or "1min";
     autoStart = true;
     privateNetwork = true;
-    hostAddress = "10.5.0.1";
-    localAddress = app.address;
+    extraFlags = [ "--network-veth" ];
     bindMounts = app.mounts;
     config = {
       imports = [ app.module ];
       nixpkgs.pkgs = pkgs;
       system.stateVersion = "26.05";
       time.timeZone = "Europe/London";
+      networking.useDHCP = false;
+      networking.useNetworkd = true;
+      systemd.network.networks."10-uplink" = {
+        matchConfig.Name = "host0";
+        address = [ "${app.address}/32" ];
+        networkConfig = {
+          LinkLocalAddressing = "no";
+          IPv6AcceptRA = false;
+        };
+        routes = [
+          {
+            Destination = "10.5.0.1/32";
+            Scope = "link";
+          }
+          { Gateway = "10.5.0.1"; }
+        ];
+      };
       networking.useHostResolvConf = false;
       networking.nameservers = [ "172.53.53.53" ];
       # The gateway's container zone is the policy boundary.

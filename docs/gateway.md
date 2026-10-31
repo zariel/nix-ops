@@ -7,8 +7,10 @@ No installation or activation is performed by adding this host.
 ## Ownership and maintenance
 
 - systemd-networkd owns physical links, the LACP bond, VLANs, WireGuard, WAN DHCP,
-  IPv6 advertisements. Native NixOS containers own their private network
-  namespaces, veth interfaces and service `/32` kernel routes.
+  IPv6 advertisements, and container veth addressing/routes on both sides of
+  each link. Native NixOS containers use systemd-nspawn to own their private
+  namespaces and veth lifetime. Networkd configures links as they appear,
+  independently of application readiness.
 - FRR owns BGP, PIM/IGMP/MLD and the static reject/Thread routes. Networkd is told
   to leave foreign routes, nexthops and policy rules alone. There is no OSPF in
   the live configuration, so none is enabled here.
@@ -25,10 +27,15 @@ No installation or activation is performed by adding this host.
   uses Java 17 and the native module's MongoDB 7; restoring an application backup
   avoids opening the old OCI MongoDB files with a different database major.
 - FRR exports kernel `/32` routes in `10.5.0.0/24` through the existing ICX peer.
-  Container startup installs a route; shutdown removes it and withdraws the BGP
-  advertisement. Application addresses are defined once in `apps.nix`; adding an
-  application in this pool needs no BGP network statement. A failed application
+  Networkd installs each route when its veth comes up; container shutdown removes
+  the interface/route and withdraws the BGP advertisement. Application addresses
+  are defined once in `apps.nix`; adding an application in this pool needs no BGP
+  network statement. A failed application
   process does not withdraw its route while the container stays running.
+- Application units wait for `network-online.target`. Native systemd directory
+  management owns service state/runtime/log directories, and UniFi retains its
+  restored `system.properties` without a startup rewrite. Its container allows
+  three minutes for Java and database initialization before startup times out.
 - nftables classifies `ve-*` interfaces as the container zone, preserving packet
   policy through the routed namespaces. Containers use the DNS VIP; Podman
   networking and the shared application bridge are removed.
