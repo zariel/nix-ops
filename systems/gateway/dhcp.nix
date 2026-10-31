@@ -51,7 +51,7 @@ in
         "tag:servers,option:domain-name,cbannister.casa"
         "tag:trusted,option:domain-name,cbannister.casa"
         "tag:iot,option:domain-name,cbannister.casa"
-        "tag:lan,vendor:ubnt,1,10.5.0.10"
+        "tag:lan,vendor:ubnt,1,10.1.0.23"
       ];
       dhcp-userclass = "set:ipxe,iPXE";
       dhcp-match = [

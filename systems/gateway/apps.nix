@@ -1,12 +1,5 @@
 { lib, pkgs, ... }:
 let
-  unifi = pkgs.unifi.overrideAttrs {
-    version = "9.5.21";
-    src = pkgs.fetchurl {
-      url = "https://dl.ui.com/unifi/9.5.21/unifi_sysvinit_all.deb";
-      hash = "sha256-faHMmrGuDI8wLCQtYi7lL4Z0V6aRFrKqTBOBLnVphq8=";
-    };
-  };
   speedtestSource = pkgs.fetchurl {
     url = "https://raw.githubusercontent.com/miguelndecarvalho/speedtest-exporter/v3.5.4/src/exporter.py";
     hash = "sha256-pCRxja/LKm+ANcfcEvATBwUD0TQPX0OTUryur7Al83o=";
@@ -41,28 +34,6 @@ let
             CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
             Restart = "on-failure";
           };
-        };
-      };
-    };
-    unifi = {
-      address = "10.5.0.10";
-      # Java and MongoDB initialization can exceed nspawn's one-minute deadline.
-      timeoutStartSec = "3min";
-      # Restore an application backup into fresh native state; the OCI MongoDB
-      # files belong to a different MongoDB major and must not be opened here.
-      mounts."/var/lib/unifi" = {
-        hostPath = "/var/lib/gateway/unifi-native";
-        isReadOnly = false;
-      };
-      module = {
-        systemd.services.unifi = {
-          after = [ "network-online.target" ];
-          wants = [ "network-online.target" ];
-        };
-        services.unifi = {
-          enable = true;
-          unifiPackage = unifi;
-          jrePackage = pkgs.jdk17_headless;
         };
       };
     };
@@ -110,7 +81,6 @@ in
     }
   ) applications;
   containers = lib.mapAttrs (_: app: {
-    timeoutStartSec = app.timeoutStartSec or "1min";
     autoStart = true;
     privateNetwork = true;
     extraFlags = [ "--network-veth" ];
@@ -146,6 +116,5 @@ in
   systemd.tmpfiles.rules = [
     "d /var/lib/gateway 0750 root systemd-network -"
     "d /var/lib/gateway/matchbox 0755 root root -"
-    "d /var/lib/gateway/unifi-native 0755 root root -"
   ];
 }

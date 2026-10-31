@@ -21,11 +21,10 @@ No installation or activation is performed by adding this host.
   external DNS VIP remains authoritative. Reservations are ordinary Nix entries
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
   All 58 live reservations are included, including MACs used in different VLANs.
-- Chrony, Avahi, node-exporter and FRR run as native systemd services. Matchbox,
-  UniFi and speedtest-exporter run as native services in separate NixOS containers.
-  Their application versions remain 0.11.0, 9.5.21 and 3.5.4 respectively. UniFi
-  uses Java 17 and the native module's MongoDB 7; restoring an application backup
-  avoids opening the old OCI MongoDB files with a different database major.
+- Chrony, Avahi, node-exporter and FRR run as native systemd services. Matchbox
+  0.11.0 and speedtest-exporter 3.5.4 run as native services in separate NixOS
+  containers. UniFi OS Server runs separately on pve2 VM 203 at `10.1.0.23`;
+  the NixOS gateway does not run a UniFi controller.
 - FRR exports kernel `/32` routes in `10.5.0.0/24` through the existing ICX peer.
   Networkd installs each route when its veth comes up; container shutdown removes
   the interface/route and withdraws the BGP advertisement. Application addresses
@@ -33,9 +32,7 @@ No installation or activation is performed by adding this host.
   network statement. A failed application
   process does not withdraw its route while the container stays running.
 - Application units wait for `network-online.target`. Native systemd directory
-  management owns service state/runtime/log directories, and UniFi retains its
-  restored `system.properties` without a startup rewrite. Its container allows
-  three minutes for Java and database initialization before startup times out.
+  management owns service state/runtime/log directories.
 - nftables classifies `ve-*` interfaces as the container zone, preserving packet
   policy through the routed namespaces. Containers use the DNS VIP; Podman
   networking and the shared application bridge are removed.
@@ -116,8 +113,9 @@ an outage for its initial OS replacement and eventual kernel maintenance.
 - TFTP listens on internal DHCP interfaces plus transit/WireGuard, constrained by
   the firewall. BIOS clients get `undionly.kpxe`, UEFI x86 clients get `ipxe.efi`,
   and iPXE clients get `http://10.5.0.8/boot.ipxe` on the servers subnet.
-- Matchbox retains `10.5.0.8` and UniFi retains `10.5.0.10`; DHCP/PXE and DNS
-  references stay valid. Speedtest-exporter moves from host networking to
+- Matchbox retains `10.5.0.8`, preserving DHCP/PXE references. UniFi discovery
+  through DHCP and DNS points to the separate server at `10.1.0.23`.
+  Speedtest-exporter moves from host networking to
   `10.5.0.11:9798`. Update its monitoring scrape target; transit permits that port
   from `172.20.0.0/16`. Its exporter implementation and metric names are retained.
 - For an existing NixOS Podman deployment, stop all three `podman-*` application
@@ -144,10 +142,10 @@ for rollback if possible.
 
 Before the first NixOS boot:
 
-1. Back up VyOS configuration, DHCP leases, WireGuard key, TFTP files, Matchbox
-   data and UniFi state. Stop UniFi for its final consistent data copy. Preserve
-   ownership when copying application state. Download a UniFi application backup
-   (`.unf`) before stopping the old controller. Build the complete NixOS closure
+1. Back up VyOS configuration, DHCP leases, WireGuard key, TFTP files and Matchbox
+   data. Verify the UniFi migration to pve2 VM 203 and its PBS backups before
+   retiring the old gateway controller. Preserve ownership when copying
+   application state. Build the complete NixOS closure
    before cutover so application startup does not depend on WAN downloads.
 2. WireGuard's existing key is encrypted in `secrets/gateway.yaml`. sops-nix
    decrypts it to `/run/secrets/gateway-wireguard`, readable by `systemd-network`;
@@ -160,15 +158,8 @@ Before the first NixOS boot:
    Never commit the SSH private key. Verify WireGuard's public key still matches
    the existing clients. Edit the encrypted secret with `sops secrets/gateway.yaml`.
 3. Copy `/config/containers/matchbox` to `/var/lib/gateway/matchbox`.
-   The native Matchbox service owns that mounted state directory. Keep the old
-   UniFi directories as a rollback backup. Start UniFi with fresh state under
-   `/var/lib/gateway/unifi-native`, then restore the `.unf` backup through
-   `https://10.5.0.10:8443`. Do not copy the old raw MongoDB database into this
-   directory. If retaining a custom certificate, copy the old `data/keystore` to
-   `unifi-native/data/keystore` while the native service is stopped and make it
-   readable by its `unifi` user. The old OCI certificate-import hook is absent.
-   Verify device inform/adoption and persisted settings after restarting
-   `container@unifi`. UniFi stays at 9.5.21; moving to UniFi OS Server is separate.
+   The native Matchbox service owns that mounted state directory. UniFi state
+   belongs to pve2 VM 203; keep the old gateway directories as a rollback backup.
 4. Copy `/config/tftpboot` to `/var/lib/tftpboot`, including `ipxe.efi` and
    `undionly.kpxe`. Files must be readable and owned by `dnsmasq` because
    `tftp-secure` is enabled. Check Matchbox's asset/profile paths and HTTP boot
@@ -186,6 +177,78 @@ The isolated VM checks cover packet policy, native application startup, namespac
 isolation and BGP route installation/withdrawal through an independent peer's
 kernel routing table. They cannot prove ISP negotiation, switch LACP compatibility
 or migrated application data.
+
+## Staged UniFi OS Server
+
+Provisioned on 2026-10-31 on `pve2` as VM **203**, named `unifi-os`: Debian 13,
+2 vCPUs, 4 GiB RAM and a 50 GiB disk on `local-zfs`, with automatic boot enabled.
+Systemd-networkd and systemd-resolved manage its networking. Its staging address
+is reserved DHCP `10.1.0.23` (MAC `BC:24:11:B4:9C:2C`) on management VLAN 100,
+and its UI is `https://unifi.cbannister.casa:11443/`. The authoritative DNS
+records for `unifi.cbannister.casa.` and `unifi.` point to `10.1.0.23`, as does
+the live gateway's DHCP controller discovery option on VLAN 100.
+Proxmox tags the VM's `net0` on
+`vmbr0`; the guest uses ordinary untagged Ethernet. Beefchunk carries VLAN 100
+on LAG 3 toward pve2 (ports `1/1/39` and `1/1/41`) and LAG 4 toward the lounge
+switch (ports `1/1/5` and `1/1/6`). NetBox records the uplinks and VLAN membership.
+The AP at `10.1.0.22` and USW-Lite at `10.1.0.12` both respond directly from
+the VM. The reservation is in `../vyos-config/config-parts/dhcp.sh` and was
+applied and saved separately on the live gateway. SSH access is through `chris`
+with the existing administrator SSH identity and passwordless sudo.
+
+The official UniFi OS Server **5.1.42** bundle supplies Network **10.5.67** and
+runs through the vendor's `uosserver.service`. Provisioning left it ready for
+owner setup and a controller backup import. Verify device migration to this
+server before retiring the legacy VyOS controller at `10.5.0.10`.
+
+Bootstrap configuration is archived in `/var/lib/unifi-provision/bootstrap`.
+Cloud-init is disabled after provisioning and its host-side snippet dependency
+and bootstrap media are detached. The VM's system disk holds its runtime
+configuration, so a PBS restore does not require the original Proxmox snippet.
+
+### PBS protection
+
+- Storage `pbs-pve2` uses server `10.1.1.32`, datastore `tank`, namespace `pve2`.
+  Backup group `vm/203` is separate from `pve`'s groups in the root namespace.
+- PBS identity `pve2-backup@pbs!pve2` has access only to `/datastore/tank/pve2`.
+  Reading the root namespace with this identity was verified to fail. The old,
+  disabled `pbs` storage entry on pve2 was left unchanged.
+- Job `backup-unifi-pve2` snapshots **only VM 203** at `01/2:15`, every two hours
+  on odd hours at `:15`. Both hosts use `Europe/London`; pve's existing PBS job
+  runs on even hours at `:00`.
+- Retention keeps the last 7, daily 14, weekly 3 and monthly 6 backups. Both
+  initial snapshots passed PBS data verification. The final snapshot's extracted
+  VM configuration also confirms it has no external bootstrap dependency.
+  Snapshot `vm/203/2026-10-31T13:26:53Z` includes the VLAN 100 NIC tag and passed
+  PBS data verification after the management-network move.
+- Root-only `/var/lib/unifi-provision/legacy-recovery` contains a stopped-state
+  archive of the old controller and its latest automatic `.unf` backup. These
+  files are also protected by the VM's PBS backups; they are not imported into
+  UniFi OS Server automatically.
+
+### Legacy controller recovery
+
+The VyOS controller failed on 2026-10-31 after a forced shutdown left an orphaned
+Podman storage container and files in its unmounted `merged` directory. Those
+files prevented Podman from replacing the container. The persistent UniFi data
+was intact. Recovery preserved the state under
+`/config/containers/unifi-recovery-20261031`, moved the orphaned root there,
+removed only UniFi's orphaned storage record, and restarted its existing 9.5.21
+image. Its status endpoint subsequently reported `up: true` with no restart loop.
+
+The generated VyOS unit gives shutdown only five seconds. A systemd drop-in
+extends Podman's shutdown grace to 90 seconds and the unit timeout to 120 seconds.
+It also removes the stopped container during `ExecStop`, before systemd tears
+down the cgroup containing its fuse-overlayfs helper. A graceful restart with
+this ordering succeeded, and the controller's status endpoint reported healthy.
+The persistent source is
+`/config/systemd/vyos-container-unifi.service.d/50-shutdown-grace.conf`;
+`/config/scripts/vyos-postconfig-bootup.script` installs it into `/run` after
+VyOS applies its configuration. The hook's original copy is in the recovery
+directory. Other gateway containers were not restarted.
+
+After verifying migration to `10.1.0.23`, retire the old VyOS controller.
+The NixOS gateway has no UniFi application or route for `10.5.0.10`.
 
 References: [networkctl reload](https://www.freedesktop.org/software/systemd/man/latest/networkctl.html),
 [netdev lifecycle](https://www.freedesktop.org/software/systemd/man/latest/systemd.netdev.html),

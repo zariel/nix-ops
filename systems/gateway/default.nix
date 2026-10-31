@@ -13,8 +13,6 @@
   nixpkgs.config.allowUnfreePredicate =
     pkg:
     builtins.elem (lib.getName pkg) [
-      "unifi-controller"
-      "mongodb"
       "ookla-speedtest"
     ];
   networking.hostName = "gateway";
