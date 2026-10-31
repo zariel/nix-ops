@@ -89,10 +89,6 @@ in
           MIIMonitorSec = "100ms";
         };
       };
-      "20-containers".netdevConfig = {
-        Name = "pod-containers";
-        Kind = "bridge";
-      };
       "20-dum99".netdevConfig = {
         Name = "dum99";
         Kind = "dummy";
@@ -228,17 +224,7 @@ in
           LinkLocalAddressing = "no";
         };
       };
-      "30-containers" = {
-        matchConfig.Name = "pod-containers";
-        address = [
-          "10.5.0.1/24"
-          "fd74:f571:d3bd:1005::1/64"
-        ];
-        networkConfig = {
-          ConfigureWithoutCarrier = true;
-          IPv6AcceptRA = false;
-        };
-      };
+
     }
     // lib.mapAttrs' (
       id: vlan:

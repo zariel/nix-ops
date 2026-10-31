@@ -94,6 +94,7 @@ pkgs.testers.runNixOSTest {
     client("guest", "bond0.30", "192.168.2.1", "192.168.2.11")
     client("servers", "bond0.10", "10.1.1.1", "10.1.1.31")
     client("wan", "wan0", "198.18.0.1", "198.18.0.2")
+    client("app", "ve-app", "10.5.0.1", "10.5.0.8")
     router.succeed("ip route add default via 198.18.0.2")
     router.wait_until_succeeds("ip netns exec trusted curl -fsS --max-time 2 http://10.1.3.14:8080")
     router.succeed("ip netns exec trusted curl -fsS --max-time 2 http://10.1.1.31:8080")
@@ -102,11 +103,17 @@ pkgs.testers.runNixOSTest {
     router.fail("ip netns exec wan curl -fsS --max-time 2 http://10.1.1.31:8080")
     router.succeed("ip netns exec guest curl -fsS --max-time 2 http://198.18.0.2:8080")
 
+    for zone in ("trusted", "iot", "servers"):
+        router.wait_until_succeeds(f"ip netns exec {zone} curl -fsS --max-time 2 http://10.5.0.8:8080")
+    for zone in ("guest", "wan"):
+        router.fail(f"ip netns exec {zone} curl -fsS --max-time 2 http://10.5.0.8:8080")
+
     # Exercise routed DNS interception and both explicit inbound DNAT paths.
     client("transit", "bond0.3001", "10.254.0.0", "10.254.0.1")
     router.succeed("ip netns exec transit ip addr add 172.53.53.53/32 dev lo; ip route add 172.53.53.53/32 via 10.254.0.1")
     router.succeed("ip netns exec transit python -m http.server 53 --bind 172.53.53.53 >/tmp/dns.log 2>&1 &")
     router.wait_until_succeeds("ip netns exec iot curl -fsS --max-time 2 http://1.1.1.1:53")
+    router.succeed("ip netns exec app curl -fsS --max-time 2 http://172.53.53.53:53")
     router.succeed("ip netns exec trusted ip addr add 10.1.2.60/24 dev peer")
     router.succeed("ip netns exec trusted python -m http.server 59453 --bind 10.1.2.60 >/tmp/roon.log 2>&1 &")
     router.wait_until_succeeds("ip netns exec wan curl -fsS --max-time 2 http://198.18.0.1:59453")

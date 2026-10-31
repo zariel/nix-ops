@@ -240,6 +240,12 @@
           // {
             dns-vip = import ./tests/dns-vip.nix { pkgs = import nixpkgs { inherit system; }; };
             gateway = import ./tests/gateway.nix { pkgs = import nixpkgs { inherit system; }; };
+            gateway-apps = import ./tests/gateway-apps.nix {
+              pkgs = import nixpkgs {
+                inherit system;
+                config.allowUnfree = true;
+              };
+            };
           }
         )
       );

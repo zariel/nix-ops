@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, ... }:
 {
   imports = [
     ./hardware.nix
@@ -7,8 +7,16 @@
     ./firewall.nix
     ./dhcp.nix
     ./services.nix
+    ./apps.nix
     ./qos.nix
   ];
+  nixpkgs.config.allowUnfreePredicate =
+    pkg:
+    builtins.elem (lib.getName pkg) [
+      "unifi-controller"
+      "mongodb"
+      "ookla-speedtest"
+    ];
   networking.hostName = "gateway";
   networking.domain = "cbannister.casa";
   system.stateVersion = "26.05";

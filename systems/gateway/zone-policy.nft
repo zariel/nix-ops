@@ -116,6 +116,7 @@ chain ip_containers_servers {
 }
 
 chain ip_containers_transit {
+  meta l4proto { tcp, udp } ip daddr 172.53.53.53 th dport 53 counter accept comment "Application DNS VIP"
   meta l4proto tcp ip daddr @address_group_k8s_nodes th dport { 6443, 50000 } counter accept comment "VyOS containers-transit 100"
   meta l4proto { tcp, udp } ip daddr 10.45.0.55 th dport 53 counter accept comment "VyOS containers-transit 110"
   counter drop
@@ -345,6 +346,7 @@ chain ip_servers_wan {
 }
 
 chain ip_transit_containers {
+  meta l4proto tcp ip daddr 10.5.0.11 th dport 9798 ip saddr @network_group_POD_NETS counter accept comment "Speedtest metrics"
   meta l4proto { tcp, udp } ip daddr 10.5.0.4 th dport 53 counter accept comment "VyOS transit-containers 10"
   meta l4proto tcp ip daddr 10.5.0.2 th dport { 6443, 50000 } ip saddr @network_group_POD_NETS counter accept comment "VyOS transit-containers 100"
   meta l4proto tcp ip daddr 10.5.0.4 th dport 8083 ip saddr @network_group_POD_NETS counter accept comment "VyOS transit-containers 110"

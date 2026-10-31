@@ -10,7 +10,7 @@ let
     ];
     guest = [ "bond0.30" ];
     iot = [ "bond0.40" ];
-    containers = [ "pod-containers" ];
+    containers = [ "ve-*" ];
     transit = [ "bond0.3001" ];
   };
   interfaces = names: "{ " + lib.concatMapStringsSep ", " (n: ''"${n}"'') names + " }";

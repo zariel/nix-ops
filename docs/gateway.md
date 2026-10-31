@@ -7,7 +7,8 @@ No installation or activation is performed by adding this host.
 ## Ownership and maintenance
 
 - systemd-networkd owns physical links, the LACP bond, VLANs, WireGuard, WAN DHCP,
-  IPv6 advertisements and the application bridge.
+  IPv6 advertisements. Native NixOS containers own their private network
+  namespaces, veth interfaces and service `/32` kernel routes.
 - FRR owns BGP, PIM/IGMP/MLD and the static reject/Thread routes. Networkd is told
   to leave foreign routes, nexthops and policy rules alone. There is no OSPF in
   the live configuration, so none is enabled here.
@@ -18,11 +19,19 @@ No installation or activation is performed by adding this host.
   external DNS VIP remains authoritative. Reservations are ordinary Nix entries
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
   All 58 live reservations are included, including MACs used in different VLANs.
-- Chrony, Avahi, node-exporter and FRR run as native systemd services. UniFi,
-  Matchbox and speedtest-exporter retain their deployed OCI versions, managed by
-  NixOS systemd units. Podman uses an unmanaged bridge: it attaches interfaces
-  without managing the router's NAT or firewall. No HAProxy container exists on
-  the live router, so the old repository's HAProxy is not resurrected.
+- Chrony, Avahi, node-exporter and FRR run as native systemd services. Matchbox,
+  UniFi and speedtest-exporter run as native services in separate NixOS containers.
+  Their application versions remain 0.11.0, 9.5.21 and 3.5.4 respectively. UniFi
+  uses Java 17 and the native module's MongoDB 7; restoring an application backup
+  avoids opening the old OCI MongoDB files with a different database major.
+- FRR exports kernel `/32` routes in `10.5.0.0/24` through the existing ICX peer.
+  Container startup installs a route; shutdown removes it and withdraws the BGP
+  advertisement. Application addresses are defined once in `apps.nix`; adding an
+  application in this pool needs no BGP network statement. A failed application
+  process does not withdraw its route while the container stays running.
+- nftables classifies `ve-*` interfaces as the container zone, preserving packet
+  policy through the routed namespaces. Containers use the DNS VIP; Podman
+  networking and the shared application bridge are removed.
 
 Dnsmasq fits these five small subnets and PXE without a Kea database/control
 agent. Kea would also allow Nix reservation data (JSON can be generated), but
@@ -57,7 +66,7 @@ Normal deployments after installation use the existing deploy-rs rollback flow:
 
 ```sh
 nix build .#nixosConfigurations.gateway.config.system.build.toplevel
-nix build .#checks.x86_64-linux.gateway
+nix build .#checks.x86_64-linux.gateway .#checks.x86_64-linux.gateway-apps
 nix develop -c deploy .#gateway
 ```
 
@@ -100,9 +109,18 @@ an outage for its initial OS replacement and eventual kernel maintenance.
 - TFTP listens on internal DHCP interfaces plus transit/WireGuard, constrained by
   the firewall. BIOS clients get `undionly.kpxe`, UEFI x86 clients get `ipxe.efi`,
   and iPXE clients get `http://10.5.0.8/boot.ipxe` on the servers subnet.
-- The Podman application network is created once with `--ignore`. Its subnet and
-  bridge identity are fixed. To change them, stop the two application containers,
-  remove that Podman network and recreate it during planned maintenance.
+- Matchbox retains `10.5.0.8` and UniFi retains `10.5.0.10`; DHCP/PXE and DNS
+  references stay valid. Speedtest-exporter moves from host networking to
+  `10.5.0.11:9798`. Update its monitoring scrape target; transit permits that port
+  from `172.20.0.0/16`. Its exporter implementation and metric names are retained.
+- For an existing NixOS Podman deployment, stop all three `podman-*` application
+  units before switching. After the switch, remove the unused `gateway-apps`
+  Podman network and delete `pod-containers` during maintenance. Networkd does
+  not delete removed netdevs. On the ICX, verify the application `/32` routes
+  replace `10.5.0.0/24`, including withdrawal/recovery when stopping/starting a
+  container. Use `systemctl status container@matchbox` and
+  `nixos-container run matchbox -- systemctl status matchbox` to inspect both
+  lifecycle layers.
 
 ## Installation and state transfer
 
@@ -121,8 +139,9 @@ Before the first NixOS boot:
 
 1. Back up VyOS configuration, DHCP leases, WireGuard key, TFTP files, Matchbox
    data and UniFi state. Stop UniFi for its final consistent data copy. Preserve
-   ownership when copying application state. Preload both OCI images and the
-   speedtest-exporter image so first startup does not rely on WAN convergence.
+   ownership when copying application state. Download a UniFi application backup
+   (`.unf`) before stopping the old controller. Build the complete NixOS closure
+   before cutover so application startup does not depend on WAN downloads.
 2. WireGuard's existing key is encrypted in `secrets/gateway.yaml`. sops-nix
    decrypts it to `/run/secrets/gateway-wireguard`, readable by `systemd-network`;
    networkd waits for decryption and reloads when the secret changes. Preserve
@@ -133,9 +152,16 @@ Before the first NixOS boot:
    `sops updatekeys secrets/gateway.yaml` using the existing gaming identity before cutover.
    Never commit the SSH private key. Verify WireGuard's public key still matches
    the existing clients. Edit the encrypted secret with `sops secrets/gateway.yaml`.
-3. Copy `/config/containers/matchbox` to `/var/lib/gateway/matchbox`, and
-   `/config/containers/unifi/{cert,data,logs}` to the corresponding directories
-   under `/var/lib/gateway/unifi`. Keep UniFi's existing UID 999/GID 102 ownership.
+3. Copy `/config/containers/matchbox` to `/var/lib/gateway/matchbox`.
+   The native Matchbox service owns that mounted state directory. Keep the old
+   UniFi directories as a rollback backup. Start UniFi with fresh state under
+   `/var/lib/gateway/unifi-native`, then restore the `.unf` backup through
+   `https://10.5.0.10:8443`. Do not copy the old raw MongoDB database into this
+   directory. If retaining a custom certificate, copy the old `data/keystore` to
+   `unifi-native/data/keystore` while the native service is stopped and make it
+   readable by its `unifi` user. The old OCI certificate-import hook is absent.
+   Verify device inform/adoption and persisted settings after restarting
+   `container@unifi`. UniFi stays at 9.5.21; moving to UniFi OS Server is separate.
 4. Copy `/config/tftpboot` to `/var/lib/tftpboot`, including `ipxe.efi` and
    `undionly.kpxe`. Files must be readable and owned by `dnsmasq` because
    `tftp-secure` is enabled. Check Matchbox's asset/profile paths and HTTP boot
@@ -149,10 +175,12 @@ At cutover, verify LACP members, VLAN MTUs, WAN lease/default routes, IPv6 PD,
 all four BGP peers, learned DNS/service routes, DHCP renewals in each VLAN,
 BIOS/UEFI/iPXE boot, WireGuard, UniFi adoption, mDNS/Thread, Roon ARC, torrent
 forwarding and CAKE latency. Test guest/IoT isolation from real clients too.
-The isolated VM check covers packet policy and service integration; it cannot
-prove ISP negotiation, switch LACP compatibility or migrated application data.
+The isolated VM checks cover packet policy, native application startup, namespace
+isolation and BGP route installation/withdrawal through an independent peer's
+kernel routing table. They cannot prove ISP negotiation, switch LACP compatibility
+or migrated application data.
 
 References: [networkctl reload](https://www.freedesktop.org/software/systemd/man/latest/networkctl.html),
 [netdev lifecycle](https://www.freedesktop.org/software/systemd/man/latest/systemd.netdev.html),
 [dnsmasq host-file reload and PXE](https://dnsmasq.org/docs/dnsmasq-man.html),
-[Podman unmanaged bridges](https://docs.podman.io/en/v5.7.1/markdown/podman-network-create.1.html).
+[NixOS containers](https://nixos.org/manual/nixos/stable/#ch-containers).
