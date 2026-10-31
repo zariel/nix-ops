@@ -39,7 +39,7 @@
           "formatting.gofumpt" = true;
         };
 
-        ltex-ls.config.ltex = {
+        ltex-ls-plus.config.ltex = {
           language = "en-GB";
         };
 
@@ -53,7 +53,7 @@
           name = "latex";
           language-servers = [
             "texlab"
-            "ltex-ls"
+            "ltex-ls-plus"
           ];
         }
         {
@@ -92,7 +92,7 @@
     nil
     gopls
     texlab
-    ltex-ls
+    ltex-ls-plus
     ruff
     pyright
 
