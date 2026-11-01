@@ -2,11 +2,14 @@
 pkgs.testers.runNixOSTest {
   name = "gateway-policy";
   globalTimeout = 180;
-  nodes.router = { ... }: {
+  nodes.router = { lib, ... }: {
     imports = [
       ../systems/gateway/firewall.nix
       ../systems/gateway/dhcp.nix
     ];
+    # Client links are created by the test after boot.
+    systemd.services.kea-dhcp4-server.wantedBy = lib.mkForce [ ];
+    environment.etc."gateway-dhcp.py".source = ./gateway-dhcp.py;
     networking.useDHCP = false;
     boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
     boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
@@ -71,7 +74,7 @@ pkgs.testers.runNixOSTest {
     links.succeed("networkctl reload")
     links.succeed("ip link show bond0.3001; wg show wg01")
     router.wait_for_unit("nftables.service")
-    router.wait_for_unit("dnsmasq.service")
+    router.wait_for_unit("atftpd.service")
     router.wait_for_unit("frr.service")
     router.succeed("ip address add 10.254.254.1/32 dev lo")
 
@@ -93,6 +96,9 @@ pkgs.testers.runNixOSTest {
     client("iot", "bond0.40", "10.1.3.1", "10.1.3.14")
     client("guest", "bond0.30", "192.168.2.1", "192.168.2.11")
     client("servers", "bond0.10", "10.1.1.1", "10.1.1.31")
+    client("lan", "bond0.100", "10.1.0.1", "10.1.0.22")
+    router.succeed("systemctl start kea-dhcp4-server")
+    router.wait_for_unit("kea-dhcp4-server.service")
     client("wan", "wan0", "198.18.0.1", "198.18.0.2")
     client("app", "ve-app", "10.5.0.1", "10.5.0.8")
     router.succeed("ip route add default via 198.18.0.2")
@@ -123,15 +129,18 @@ pkgs.testers.runNixOSTest {
     router.succeed("ip netns exec wan ip addr add 1.0.1.1/32 dev lo; ip route add 1.0.1.1/32 via 198.18.0.2")
     router.fail("ip netns exec wan curl --interface 1.0.1.1 -fsS --max-time 2 http://198.18.0.1:50413")
 
-    # Verify an actual DHCP exchange selects the migrated MAC reservation.
-    router.succeed("ip netns exec guest ip addr flush dev peer")
-    router.succeed("ip netns exec guest ip link set peer address 64:4b:f0:37:f6:78")
-    router.succeed("ip netns exec guest udhcpc -f -n -q -t 5 -i peer -s /bin/true > /tmp/dhcp.log 2>&1")
-    router.succeed("grep '192.168.2.11' /tmp/dhcp.log")
+    # Check reservations, pool options, vendor discovery and boot selection
+    # through actual DHCP exchanges, then repeat after reloading and restarting.
+    for zone in ("servers", "trusted", "guest", "iot", "lan"):
+        router.succeed(f"ip netns exec {zone} python /etc/gateway-dhcp.py {zone}")
+    router.succeed("systemctl reload kea-dhcp4-server")
+    router.succeed("systemctl restart kea-dhcp4-server")
+    for zone in ("servers", "trusted", "guest", "iot", "lan"):
+        router.succeed(f"ip netns exec {zone} python /etc/gateway-dhcp.py {zone}")
 
-    # Legacy and UEFI PXE are selected in dnsmasq, and TFTP data connections
-    # traverse the conntrack helper rather than opening an ephemeral UDP range.
-    router.succeed("echo pxe-test > /var/lib/tftpboot/test; chown dnsmasq:dnsmasq /var/lib/tftpboot/test")
+    # TFTP data connections traverse the conntrack helper rather than opening
+    # an ephemeral UDP range. Serve the boot asset from its native service.
+    router.succeed("echo pxe-test > /var/lib/tftpboot/test; chmod 644 /var/lib/tftpboot/test")
     router.succeed("ip netns exec trusted tftp -g -r test -l /tmp/tftp-result 10.254.254.1")
     router.succeed("grep pxe-test /tmp/tftp-result")
     router.succeed("vtysh -c 'show bgp ipv4 unicast summary json' > /tmp/bgp.json")

@@ -1,79 +1,166 @@
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  ...
+}:
 let
   reservations = import ./reservations.nix;
-  hosts = lib.concatStringsSep "\n" (
-    lib.concatLists (
-      lib.mapAttrsToList (
-        zone: entries:
-        lib.mapAttrsToList (
-          name: values: "${builtins.elemAt values 0},set:${zone},${builtins.elemAt values 1},${name}"
-        ) entries
-      ) reservations
-    )
-  );
-in
-{
-  environment.etc."gateway/dhcp-hosts".text = hosts + "\n";
-  services.dnsmasq = {
-    enable = true;
-    resolveLocalQueries = false;
-    settings = {
-      port = 0;
-      bind-dynamic = true;
-      interface = [
-        "bond0.10"
-        "bond0.20"
-        "bond0.30"
-        "bond0.40"
-        "bond0.100"
-        "bond0.3001"
-        "wg01"
-      ];
-      dhcp-authoritative = true;
-      dhcp-hostsfile = "/etc/gateway/dhcp-hosts";
-      dhcp-range = [
-        "set:servers,10.1.1.200,10.1.1.254,255.255.255.0,8h"
-        "set:trusted,10.1.2.200,10.1.2.254,255.255.255.0,8h"
-        "set:guest,192.168.2.200,192.168.2.254,255.255.255.0,1h"
-        "set:iot,10.1.3.200,10.1.3.254,255.255.255.0,8h"
-        "set:lan,10.1.0.200,10.1.0.254,255.255.255.0,8h"
-      ];
-      dhcp-option = [
-        "option:dns-server,172.53.53.53"
-        "tag:servers,option:router,10.1.1.1"
-        "tag:trusted,option:router,10.1.2.1"
-        "tag:guest,option:router,192.168.2.1"
-        "tag:iot,option:router,10.1.3.1"
-        "tag:lan,option:router,10.1.0.1"
-        "tag:servers,option:ntp-server,10.254.254.1"
-        "tag:trusted,option:ntp-server,10.254.254.1"
-        "tag:lan,option:ntp-server,10.254.254.1"
-        "tag:servers,option:domain-name,cbannister.casa"
-        "tag:trusted,option:domain-name,cbannister.casa"
-        "tag:iot,option:domain-name,cbannister.casa"
-        "tag:lan,vendor:ubnt,1,10.1.0.23"
-      ];
-      dhcp-userclass = "set:ipxe,iPXE";
-      dhcp-match = [
-        "set:efi,option:client-arch,7"
-        "set:efi,option:client-arch,9"
-      ];
-      dhcp-boot = [
-        "tag:servers,tag:ipxe,http://10.5.0.8/boot.ipxe"
-        "tag:servers,tag:!ipxe,tag:efi,ipxe.efi,,10.1.1.1"
-        "tag:servers,tag:!ipxe,tag:!efi,undionly.kpxe,,10.1.1.1"
-      ];
-      enable-tftp = true;
-      no-dhcp-interface = [
-        "bond0.3001"
-        "wg01"
-      ];
-      tftp-root = "/var/lib/tftpboot";
-      tftp-secure = true;
+  subnets = {
+    servers = {
+      id = 10;
+      prefix = "10.1.1";
+    };
+    trusted = {
+      id = 20;
+      prefix = "10.1.2";
+    };
+    guest = {
+      id = 30;
+      prefix = "192.168.2";
+    };
+    iot = {
+      id = 40;
+      prefix = "10.1.3";
+    };
+    lan = {
+      id = 100;
+      prefix = "10.1.0";
     };
   };
-  # Only reservation changes use SIGHUP. Main config changes still restart dnsmasq:
-  # SIGHUP does NOT reread its main configuration file.
-  systemd.services.dnsmasq.reloadTriggers = [ config.environment.etc."gateway/dhcp-hosts".source ];
-  systemd.tmpfiles.rules = [ "d /var/lib/tftpboot 0755 dnsmasq dnsmasq -" ];
+  interfaces = lib.mapAttrsToList (_: subnet: "bond0.${toString subnet.id}") subnets;
+  networkReady = map (interface: "systemd-networkd-wait-online@${interface}.service") interfaces;
+in
+{
+  services.kea.dhcp4 = {
+    enable = true;
+    settings = {
+      authoritative = true;
+      valid-lifetime = 28800;
+      interfaces-config.interfaces = interfaces;
+      lease-database = {
+        type = "memfile";
+        persist = true;
+        name = "/var/lib/kea/dhcp4.leases";
+      };
+      host-reservation-identifiers = [ "hw-address" ];
+      # Reservations and leases are keyed by MAC within each subnet, including
+      # devices that send different client IDs when booting another OS.
+      match-client-id = false;
+      option-data = [
+        {
+          name = "domain-name-servers";
+          data = "172.53.53.53";
+        }
+      ];
+      option-def = [
+        {
+          name = "unifi-controller";
+          code = 1;
+          space = "vendor-encapsulated-options-space";
+          type = "ipv4-address";
+        }
+      ];
+      client-classes = [
+        {
+          name = "servers";
+          test = "pkt.iface == 'bond0.10'";
+        }
+        {
+          name = "ipxe";
+          test = "member('servers') and (option[77].hex == 'iPXE' or option[77].hex == 0x0469505845)";
+          boot-file-name = "http://10.5.0.8/boot.ipxe";
+        }
+        {
+          name = "efi";
+          # Option 93 is an ordered list of 16-bit architecture identifiers.
+          test = "match('^(....)*(0007|0009).*$', hexstring(option[93].hex, ''))";
+        }
+        {
+          name = "pxe-efi";
+          test = "member('servers') and not member('ipxe') and member('efi')";
+          next-server = "10.1.1.1";
+          boot-file-name = "ipxe.efi";
+        }
+        {
+          name = "pxe-bios";
+          test = "member('servers') and not member('ipxe') and not member('efi')";
+          next-server = "10.1.1.1";
+          boot-file-name = "undionly.kpxe";
+        }
+        {
+          name = "unifi";
+          test = "pkt.iface == 'bond0.100' and match('.*ubnt.*', option[60].hex)";
+          option-data = [
+            {
+              name = "vendor-encapsulated-options";
+              always-send = true;
+            }
+            {
+              name = "unifi-controller";
+              space = "vendor-encapsulated-options-space";
+              data = "10.1.0.23";
+              always-send = true;
+            }
+          ];
+        }
+      ];
+      subnet4 = lib.mapAttrsToList (zone: subnet: {
+        inherit (subnet) id;
+        interface = "bond0.${toString subnet.id}";
+        subnet = "${subnet.prefix}.0/24";
+        pools = [ { pool = "${subnet.prefix}.200 - ${subnet.prefix}.254"; } ];
+        valid-lifetime = if zone == "guest" then 3600 else 28800;
+        reservations = lib.mapAttrsToList (name: values: {
+          hostname = name;
+          hw-address = builtins.elemAt values 0;
+          ip-address = builtins.elemAt values 1;
+        }) reservations.${zone};
+        option-data = [
+          {
+            name = "routers";
+            data = "${subnet.prefix}.1";
+          }
+        ]
+        ++
+          lib.optional
+            (builtins.elem zone [
+              "servers"
+              "trusted"
+              "lan"
+            ])
+            {
+              name = "ntp-servers";
+              data = "10.254.254.1";
+            }
+        ++
+          lib.optional
+            (builtins.elem zone [
+              "servers"
+              "trusted"
+              "iot"
+            ])
+            {
+              name = "domain-name";
+              data = "cbannister.casa";
+            };
+      }) subnets;
+    };
+  };
+
+  # Kea requires its subnet interfaces and addresses at startup. Wait only for
+  # the LANs, so WAN availability and unplugged spare ports do not gate DHCP.
+  systemd.services.kea-dhcp4-server = lib.mkIf config.systemd.network.enable {
+    requires = networkReady;
+    after = networkReady;
+  };
+
+  # Replies must preserve the request's destination address for the TFTP
+  # conntrack helper on this router with multiple local addresses.
+  services.atftpd = {
+    enable = true;
+    root = "/var/lib/tftpboot";
+    # Use IPv4 packet metadata rather than IPv4-mapped IPv6 addresses.
+    extraOptions = [ "--bind-address 0.0.0.0" ];
+  };
+  systemd.tmpfiles.rules = [ "d /var/lib/tftpboot 0755 root root -" ];
 }

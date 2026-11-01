@@ -17,8 +17,9 @@ No installation or activation is performed by adding this host.
 - nftables owns filtering, NAT, MSS adjustment and the TFTP conntrack helper.
   Its dedicated `inet gateway` table is replaced atomically; other tables and
   conntrack state are not flushed.
-- dnsmasq supplies DHCP and TFTP, with its DNS listener disabled. The existing
-  external DNS VIP remains authoritative. Reservations are ordinary Nix entries
+- Kea supplies DHCPv4 with persistent memfile leases. Atftpd supplies TFTP.
+  The external DNS VIP remains authoritative.
+  Reservations are ordinary Nix entries
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
   All 58 live reservations are included, including MACs used in different VLANs.
 - Chrony, Avahi, node-exporter and FRR run as native systemd services. Matchbox
@@ -37,9 +38,13 @@ No installation or activation is performed by adding this host.
   policy through the routed namespaces. Containers use the DNS VIP; Podman
   networking and the shared application bridge are removed.
 
-Dnsmasq fits these five small subnets and PXE without a Kea database/control
-agent. Kea would also allow Nix reservation data (JSON can be generated), but
-would add machinery without a current requirement for DHCP HA or an API.
+Kea is configured through `services.kea.dhcp4.settings`; NixOS generates its
+JSON configuration and manages the service and state directory. Reservations
+remain scoped to their subnet, and client classes select PXE boot files and
+UniFi discovery options. No SQL database or HTTP control API is enabled.
+`services.atftpd` serves the boot assets from `/var/lib/tftpboot`.
+Kea waits for its five LAN interfaces through networkd's per-interface readiness
+units; it does not wait for the WAN or unused ports.
 
 Networkd fits a router whose physical topology changes infrequently. NetworkManager
 connection profiles are an alternative when frequent interactive link changes
@@ -50,8 +55,7 @@ Neither alternative eliminates a link interruption when recreating a bond or VLA
 
 | Change | Activation behaviour |
 | --- | --- |
-| DHCP reservation | dnsmasq SIGHUP through a reload trigger; leases persist |
-| DHCP pools/options/PXE settings | dnsmasq restart; existing client leases remain valid |
+| DHCP reservations/pools/options/PXE settings | Kea restart; file-backed leases persist and existing client leases remain valid |
 | Firewall/NAT | atomic nftables reload; existing conntrack entries persist |
 | BGP policy/static routes | FRR integrated-config reload; affected peers/routes may reconverge |
 | Addresses/routes/DHCP in `.network` files | networkd reload and affected-link reconfiguration |
@@ -110,8 +114,8 @@ an outage for its initial OS replacement and eventual kernel maintenance.
 - Driver defaults replace the old offload/ring-buffer/sysctl performance tuning.
   CAKE retains 950 Mbit/s upload, 890 Mbit/s download, 20 ms RTT and NAT-aware
   per-host fairness. Validate throughput and latency on the actual hardware.
-- TFTP listens on internal DHCP interfaces plus transit/WireGuard, constrained by
-  the firewall. BIOS clients get `undionly.kpxe`, UEFI x86 clients get `ipxe.efi`,
+- TFTP listens through atftpd, with access constrained by the firewall.
+  BIOS clients get `undionly.kpxe`, UEFI x86 clients get `ipxe.efi`,
   and iPXE clients get `http://10.5.0.8/boot.ipxe` on the servers subnet.
 - Matchbox retains `10.5.0.8`, preserving DHCP/PXE references. UniFi discovery
   through DHCP and DNS points to the separate server at `10.1.0.23`.
@@ -161,12 +165,15 @@ Before the first NixOS boot:
    The native Matchbox service owns that mounted state directory. UniFi state
    belongs to pve2 VM 203; keep the old gateway directories as a rollback backup.
 4. Copy `/config/tftpboot` to `/var/lib/tftpboot`, including `ipxe.efi` and
-   `undionly.kpxe`. Files must be readable and owned by `dnsmasq` because
-   `tftp-secure` is enabled. Check Matchbox's asset/profile paths and HTTP boot
-   URL. The source repository does not contain these stateful assets.
+   `undionly.kpxe`. Files must be world-readable (for example, mode `0644`) and
+   directories world-searchable (`0755`); the TFTP service runs as `nobody`.
+   Ownership can remain `root:root`. Check Matchbox's asset/profile paths and
+   HTTP boot URL. The source repository does not contain these stateful assets.
 5. Account for existing dynamic DHCP leases before starting a fresh DHCP server.
-   Convert active leases to dnsmasq's format or temporarily reserve their
-   addresses; do not blindly copy an ISC/Kea lease database into dnsmasq.
+   Import active leases into Kea's memfile format with the configured subnet
+   IDs (10 servers, 20 trusted, 30 guest, 40 IoT, 100 management), or temporarily
+   reserve their addresses. Do not copy an ISC or dnsmasq lease file into Kea.
+   Back up and retain `/var/lib/kea` across subsequent NixOS deployments.
    There must be only one authoritative DHCP server during cutover.
 
 At cutover, verify LACP members, VLAN MTUs, WAN lease/default routes, IPv6 PD,
@@ -252,5 +259,5 @@ The NixOS gateway has no UniFi application or route for `10.5.0.10`.
 
 References: [networkctl reload](https://www.freedesktop.org/software/systemd/man/latest/networkctl.html),
 [netdev lifecycle](https://www.freedesktop.org/software/systemd/man/latest/systemd.netdev.html),
-[dnsmasq host-file reload and PXE](https://dnsmasq.org/docs/dnsmasq-man.html),
+[Kea DHCPv4 configuration](https://kea.readthedocs.io/en/kea-3.2.1/arm/dhcp4-srv.html),
 [NixOS containers](https://nixos.org/manual/nixos/stable/#ch-containers).
