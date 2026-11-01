@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ ... }:
 {
   imports = [
     ./hardware.nix
@@ -10,11 +10,6 @@
     ./apps.nix
     ./qos.nix
   ];
-  nixpkgs.config.allowUnfreePredicate =
-    pkg:
-    builtins.elem (lib.getName pkg) [
-      "ookla-speedtest"
-    ];
   networking.hostName = "gateway";
   networking.domain = "cbannister.casa";
   system.stateVersion = "26.05";

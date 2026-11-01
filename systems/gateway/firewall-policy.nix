@@ -364,11 +364,6 @@ in
         saddr = setRef "k8s_nodes";
         comment = "Host metrics";
       })
-      (tcp {
-        dport = 9798;
-        saddr = setRef "k8s_pods";
-        comment = "Speedtest metrics";
-      })
     ];
     servers.to.transit = [
       dns4
@@ -399,12 +394,6 @@ in
     ];
     servers.to.wan = [ accept ];
     transit.to.containers = [
-      (tcp {
-        daddr = "10.5.0.11";
-        dport = 9798;
-        saddr = setRef "transit_pods";
-        comment = "Speedtest metrics";
-      })
       (tcpUdp {
         daddr = "10.5.0.4";
         dport = 53;

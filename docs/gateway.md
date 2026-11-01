@@ -23,8 +23,8 @@ No installation or activation is performed by adding this host.
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
   All 58 live reservations are included, including MACs used in different VLANs.
 - Chrony, Avahi, node-exporter and FRR run as native systemd services. Matchbox
-  0.11.0 and speedtest-exporter 3.5.4 run as native services in separate NixOS
-  containers. UniFi OS Server runs separately on pve2 VM 203 at `10.1.0.23`;
+  0.11.0 runs as a native service in a NixOS container.
+  UniFi OS Server runs separately on pve2 VM 203 at `10.1.0.23`;
   the NixOS gateway does not run a UniFi controller.
 - FRR exports kernel `/32` routes in `10.5.0.0/24` through the existing ICX peer.
   Networkd installs each route when its veth comes up; container shutdown removes
@@ -170,9 +170,6 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   and iPXE clients get `http://10.5.0.8/boot.ipxe` on the servers subnet.
 - Matchbox retains `10.5.0.8`, preserving DHCP/PXE references. UniFi discovery
   through DHCP and DNS points to the separate server at `10.1.0.23`.
-  Speedtest-exporter moves from host networking to
-  `10.5.0.11:9798`. Update its monitoring scrape target; transit permits that port
-  from `172.20.0.0/16`. Its exporter implementation and metric names are retained.
 - For an existing NixOS Podman deployment, stop all three `podman-*` application
   units before switching. After the switch, remove the unused `gateway-apps`
   Podman network and delete `pod-containers` during maintenance. Networkd does

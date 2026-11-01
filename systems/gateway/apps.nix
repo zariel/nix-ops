@@ -1,14 +1,5 @@
 { lib, pkgs, ... }:
 let
-  speedtestSource = pkgs.fetchurl {
-    url = "https://raw.githubusercontent.com/miguelndecarvalho/speedtest-exporter/v3.5.4/src/exporter.py";
-    hash = "sha256-pCRxja/LKm+ANcfcEvATBwUD0TQPX0OTUryur7Al83o=";
-  };
-  speedtestPython = pkgs.python3.withPackages (p: [
-    p.flask
-    p.prometheus-client
-    p.waitress
-  ]);
   applications = {
     matchbox = {
       address = "10.5.0.8";
@@ -32,25 +23,6 @@ let
             StateDirectory = "matchbox";
             AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
             CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
-            Restart = "on-failure";
-          };
-        };
-      };
-    };
-    speedtest = {
-      address = "10.5.0.11";
-      mounts = { };
-      module = {
-        systemd.services.speedtest-exporter = {
-          wantedBy = [ "multi-user.target" ];
-          after = [ "network-online.target" ];
-          wants = [ "network-online.target" ];
-          path = [ pkgs.ookla-speedtest ];
-          serviceConfig = {
-            ExecStart = "${speedtestPython}/bin/python -u ${speedtestSource}";
-            DynamicUser = true;
-            StateDirectory = "speedtest-exporter";
-            Environment = "HOME=/var/lib/speedtest-exporter";
             Restart = "on-failure";
           };
         };

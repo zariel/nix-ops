@@ -244,10 +244,7 @@
               pkgs = import nixpkgs { inherit system; };
             };
             gateway-apps = import ./tests/gateway-apps.nix {
-              pkgs = import nixpkgs {
-                inherit system;
-                config.allowUnfree = true;
-              };
+              pkgs = import nixpkgs { inherit system; };
             };
           }
         )
