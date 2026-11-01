@@ -22,6 +22,7 @@ pkgs.testers.runNixOSTest {
     };
     environment.systemPackages = [
       pkgs.iproute2
+      pkgs.iputils
       pkgs.curl
       pkgs.python3
       pkgs.busybox
@@ -128,6 +129,40 @@ pkgs.testers.runNixOSTest {
     router.wait_until_succeeds("ip netns exec wan curl -fsS --max-time 2 http://198.18.0.1:50413")
     router.succeed("ip netns exec wan ip addr add 1.0.1.1/32 dev lo; ip route add 1.0.1.1/32 via 198.18.0.2")
     router.fail("ip netns exec wan curl --interface 1.0.1.1 -fsS --max-time 2 http://198.18.0.1:50413")
+
+    # IPv4 trust does not imply IPv6 trust. Internal ICMPv6 is permitted even
+    # across pairs that deny TCP; WAN echo requests remain denied.
+    for zone, interface, prefix in (
+        ("trusted", "bond0.20", "fd00:20"),
+        ("iot", "bond0.40", "fd00:40"),
+        ("guest", "bond0.30", "fd00:30"),
+        ("servers", "bond0.10", "fd00:10"),
+        ("app", "ve-app", "fd00:5"),
+        ("transit", "bond0.3001", "fd00:3001"),
+        ("wan", "wan0", "2001:db8:1"),
+    ):
+        router.succeed(f"ip -6 address add {prefix}::1/64 dev {interface} nodad")
+        router.succeed(f"ip netns exec {zone} ip -6 address add {prefix}::2/64 dev peer nodad")
+        router.succeed(f"ip netns exec {zone} ip -6 route add default via {prefix}::1")
+        router.succeed(f"ip netns exec {zone} python -m http.server 8081 --bind :: >/tmp/{zone}-ipv6.log 2>&1 &")
+
+    router.wait_until_succeeds("ip netns exec trusted curl -gfsS --max-time 2 http://[fd00:5::2]:8081")
+    router.succeed("ip netns exec iot curl -gfsS --max-time 2 http://[fd00:5::2]:8081")
+    router.fail("ip netns exec servers curl -gfsS --max-time 2 http://[fd00:5::2]:8081")
+    router.fail("ip netns exec trusted curl -gfsS --max-time 2 http://[fd00:10::2]:8081")
+    router.fail("ip netns exec guest curl -gfsS --max-time 2 http://[fd00:20::2]:8081")
+    router.succeed("ip netns exec guest ping -6 -c 1 -W 2 fd00:20::2")
+    router.fail("ip netns exec wan ping -6 -c 1 -W 2 fd00:20::2")
+
+    # The Thread prefix exception grants trusted clients access only to that
+    # prefix within IoT. Transit retains unrestricted IPv6 access to the router.
+    router.succeed("ip netns exec iot ip -6 address add fd42:dfb5:24e4:1::2/64 dev peer nodad")
+    router.succeed("ip -6 route add fd42:dfb5:24e4:1::/64 via fd00:40::2")
+    router.fail("ip netns exec trusted curl -gfsS --max-time 2 http://[fd00:40::2]:8081")
+    router.succeed("ip netns exec trusted curl -gfsS --max-time 2 http://[fd42:dfb5:24e4:1::2]:8081")
+    router.succeed("python -m http.server 8081 --bind :: >/tmp/router-ipv6.log 2>&1 &")
+    router.wait_until_succeeds("ip netns exec transit curl -gfsS --max-time 2 http://[fd00:3001::1]:8081")
+    router.fail("ip netns exec guest curl -gfsS --max-time 2 http://[fd00:30::1]:8081")
 
     # Check reservations, pool options, vendor discovery and boot selection
     # through actual DHCP exchanges, then repeat after reloading and restarting.

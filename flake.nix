@@ -240,6 +240,9 @@
           // {
             dns-vip = import ./tests/dns-vip.nix { pkgs = import nixpkgs { inherit system; }; };
             gateway = import ./tests/gateway.nix { pkgs = import nixpkgs { inherit system; }; };
+            gateway-firewall = import ./tests/gateway-firewall.nix {
+              pkgs = import nixpkgs { inherit system; };
+            };
             gateway-apps = import ./tests/gateway-apps.nix {
               pkgs = import nixpkgs {
                 inherit system;

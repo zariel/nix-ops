@@ -51,6 +51,57 @@ connection profiles are an alternative when frequent interactive link changes
 matter; a custom reconciler would add lifecycle and rollback behaviour to maintain.
 Neither alternative eliminates a link interruption when recreating a bond or VLAN.
 
+## Firewall maintenance
+
+Edit `systems/gateway/firewall-policy.nix` for zones, named address/port sets,
+and zone-to-zone permissions. `local` means the gateway itself. Entries such as
+`ipv4.trusted.to.local` permit traffic from trusted clients to the gateway.
+The policy imports `addressSet`, `portSet` and `setRef` from
+`firewall-helpers.nix`. `addressSet [ "192.0.2.1" "192.0.2.2" ]` constructs an
+IPv4 address set; `portSet [ 22 443 ]` constructs a port set. Both supply the
+nftables type and interval flag, and return ordinary attribute sets.
+
+Each zone-pair entry is an ordered list of rule attribute sets. The `tcp`,
+`udp`, `tcpUdp` and `icmpv6` helpers set `l4proto` and preserve the other fields.
+They reject an explicit `l4proto` in their argument. For example, this rule
+allows SSH:
+
+```nix
+tcp {
+  dport = 22;
+  comment = "SSH";
+}
+```
+
+Rules support `l4proto`, `saddr`, `daddr`, `sport`, `dport`, `icmpv6Type`,
+`verdict` and `comment`. The verdict defaults to `accept`; use `verdict = "drop"`
+for ordered exclusions. Match values can be single values or lists. Use
+`setRef "k8s_nodes"` for a named set, `{ from = 30000; to = 65535; }` for a
+port range, and `{ mask = "::ffff:ffff:ffff:ffff"; value = "::7c7d:c6ff:fec7:26ac"; }`
+for a masked address match. Port matches require TCP or UDP. Unknown fields
+and invalid port values fail evaluation.
+
+Address matches use the entry's IPv4 or IPv6 family. Shared DHCP, DNS, NTP,
+SSH, TFTP and ICMP rules are defined at the top of the policy file. Use
+`comment` to describe the service or purpose.
+
+IPv4 and IPv6 permissions are independent. Omitted zone pairs default to deny,
+and unmatched traffic within a listed pair is dropped. Internal IPv6 pairs
+share an ICMPv6 allowance; exceptions replace that pair's complete rule list.
+WAN IPv6 permits the listed error types, with neighbor discovery allowed to
+the gateway. Keep ordered drops, such as GeoIP restrictions, before broader
+allowances.
+
+`firewall.nix` generates chains only for listed policies and owns the base
+rules, NAT, MSS adjustment and conntrack helper. Loopback, established/related
+traffic, DHCP/RA exceptions and traffic within a zone are handled before the
+zone-pair rules. The GeoIP snapshot remains separate in `geoip-cn-ru.nft`.
+
+Validate changes with the rule rendering check and both gateway VM checks shown below. They exercise
+IPv4/IPv6 isolation, service exceptions, DHCP, TFTP, NAT, container traffic and
+firewall reloads. Inspect the applied policy with `nft list table inet gateway`;
+rule comments identify services and purposes.
+
 ## What applies without rebooting
 
 | Change | Activation behaviour |
@@ -74,7 +125,7 @@ Normal deployments after installation use the existing deploy-rs rollback flow:
 
 ```sh
 nix build .#nixosConfigurations.gateway.config.system.build.toplevel
-nix build .#checks.x86_64-linux.gateway .#checks.x86_64-linux.gateway-apps
+nix build .#checks.x86_64-linux.gateway-firewall .#checks.x86_64-linux.gateway .#checks.x86_64-linux.gateway-apps
 nix develop -c deploy .#gateway
 ```
 
