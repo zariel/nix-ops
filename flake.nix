@@ -243,6 +243,9 @@
             gateway-firewall = import ./tests/gateway-firewall.nix {
               pkgs = import nixpkgs { inherit system; };
             };
+            gateway-spamhaus = import ./tests/gateway-spamhaus.nix {
+              pkgs = import nixpkgs { inherit system; };
+            };
             gateway-apps = import ./tests/gateway-apps.nix {
               pkgs = import nixpkgs { inherit system; };
             };

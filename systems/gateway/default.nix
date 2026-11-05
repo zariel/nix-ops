@@ -5,6 +5,7 @@
     ./network.nix
     ./secrets.nix
     ./firewall.nix
+    ./spamhaus.nix
     ./dhcp.nix
     ./services.nix
     ./apps.nix

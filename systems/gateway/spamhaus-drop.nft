@@ -1,0 +1,35 @@
+# This table belongs to spamhaus-drop; the gateway firewall preserves it.
+table inet spamhaus_drop
+delete table inet spamhaus_drop
+table inet spamhaus_drop {
+    set drop_v4 {
+        type ipv4_addr; flags interval; auto-merge;
+        @IPV4@
+    }
+    set drop_v6 {
+        type ipv6_addr; flags interval; auto-merge;
+        @IPV6@
+    }
+    chain inbound {
+        ip saddr @drop_v4 counter drop
+        ip6 saddr @drop_v6 counter drop
+    }
+    chain outbound {
+        ip daddr @drop_v4 counter drop
+        ip6 daddr @drop_v6 counter drop
+    }
+    # Run before the gateway's established/related accepts.
+    chain input {
+        type filter hook input priority -10; policy accept;
+        iifname "wan0" jump inbound
+    }
+    chain forward {
+        type filter hook forward priority -10; policy accept;
+        iifname "wan0" jump inbound
+        oifname "wan0" jump outbound
+    }
+    chain output {
+        type filter hook output priority -10; policy accept;
+        oifname "wan0" jump outbound
+    }
+}
