@@ -76,12 +76,11 @@ in
           denylists = {
             ads = [
               (toString localDenylist)
-              "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
-              "https://www.github.developerdan.com/hosts/lists/ads-and-tracking-extended.txt"
-              "https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-domains.txt"
-              "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext"
-              "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.txt"
               "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.txt"
+              "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.txt"
+              "https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.txt"
+              # AdGuard DNS Filter converted to hosts format for Blocky.
+              "https://raw.githubusercontent.com/r-a-y/mobile-hosts/master/AdguardDNS.txt"
             ];
             fakenews = [
               "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews-only/hosts"

@@ -149,9 +149,9 @@ getPool("cloudflare"):setCache(cloudflareCache)
 -- addAction(AllRule(), LogAction("", false, false, true, false, false))
 -- addResponseAction(AllRule(), LogResponseAction("", false, true, false, false))
 
--- block responding to this so that downstream clients cant discover upstream resolvers
--- that bypass blocky.
-addAction(QNameSuffixRule('resolver.arpa'), ERCodeAction(DNSRCode.NXDOMAIN))
+-- Return NODATA for DDR discovery (RFC 9462) so clients cannot discover
+-- upstream encrypted resolvers that bypass Blocky.
+addAction(QNameSuffixRule('resolver.arpa'), RCodeAction(DNSRCode.NOERROR))
 addAction(QNameSuffixRule('mask.icloud.com'), ERCodeAction(DNSRCode.NXDOMAIN))
 addAction(QNameSuffixRule('mask-h2.icloud.com'), ERCodeAction(DNSRCode.NXDOMAIN))
 
