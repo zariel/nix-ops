@@ -1,9 +1,11 @@
-{ pkgs, ... }:
+{ pkgs, sopsModule, ... }:
 pkgs.testers.runNixOSTest {
   name = "gateway-policy";
   globalTimeout = 180;
   nodes.router = { lib, ... }: {
     imports = [
+      sopsModule
+      ./dhcp-dns-secret.nix
       ../systems/gateway/firewall.nix
       ../systems/gateway/dhcp.nix
     ];

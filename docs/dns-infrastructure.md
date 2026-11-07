@@ -150,7 +150,7 @@ Key points:
     `10.1.3.0/24` and `192.168.2.0/24` (secondaries)
 
 The gateway runs the writable BIND primary for DHCP zones at `10.254.254.1`.
-Kea D2 updates it using a local TSIG credential. Each DNS VM stores its secondary
+Kea D2 updates it using a SOPS-managed local TSIG credential. Each DNS VM stores its secondary
 zones and journals under `/var/lib/bind` and answers locally. Queries are not
 forwarded to the gateway. During a gateway outage, each VM can continue serving
 and restart from disk until the zones' 30-day SOA expiry interval elapses without

@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, sopsModule }:
 let
   dns = import ../roles/dhcp-dns/settings.nix { inherit (pkgs) lib; };
   replica = index: { lib, ... }: {
@@ -34,6 +34,8 @@ pkgs.testers.runNixOSTest {
   nodes = {
     router = { lib, ... }: {
       imports = [
+        sopsModule
+        ./dhcp-dns-secret.nix
         ../systems/gateway/dhcp.nix
         ../systems/gateway/firewall.nix
       ];
@@ -77,6 +79,7 @@ pkgs.testers.runNixOSTest {
     router.succeed("systemctl start kea-dhcp4-server")
     router.wait_for_unit("kea-dhcp4-server.service")
     router.wait_for_unit("kea-dhcp-ddns-server.service")
+    router.succeed("test -s /run/secrets/gateway-ddns; test ! -e /var/lib/gateway-ddns/secret")
     router.fail("su nobody -s /bin/sh -c 'test -r /run/named/kea-ddns.key'")
     for node in replicas:
         node.wait_for_unit("dnsdist.service")
@@ -111,10 +114,10 @@ pkgs.testers.runNixOSTest {
         node.wait_until_succeeds(f"dig @127.0.53.10 {guest_name} A +norecurse | grep 'status: NXDOMAIN'")
 
     # Keep all copies and the signing identity across a primary restart.
-    fingerprint = router.succeed("sha256sum /var/lib/gateway-ddns/secret")
+    fingerprint = router.succeed("sha256sum /run/secrets/gateway-ddns")
     router.succeed("systemctl restart bind kea-dhcp-ddns-server")
     router.succeed("test \"$(dig @127.0.0.1 -x 10.1.2.10 +short)\" = chris-iphone.trusted.dhcp.cbannister.casa.")
-    assert router.succeed("sha256sum /var/lib/gateway-ddns/secret") == fingerprint
+    assert router.succeed("sha256sum /run/secrets/gateway-ddns") == fingerprint
 
     # DHCP must keep allocating while D2 is stopped; renewal repairs lost updates.
     router.succeed("systemctl stop kea-dhcp-ddns-server")
@@ -145,7 +148,7 @@ pkgs.testers.runNixOSTest {
     router.wait_for_unit("multi-user.target")
     network()
     router.succeed("systemctl start kea-dhcp4-server")
-    assert router.succeed("sha256sum /var/lib/gateway-ddns/secret") == fingerprint
+    assert router.succeed("sha256sum /run/secrets/gateway-ddns") == fingerprint
     lease("trusted", "6c:3a:ff:28:09:e1", "spoofed", "renew")
     lease("trusted", "6c:3a:ff:28:09:e1", "spoofed", "release")
     for node in replicas:

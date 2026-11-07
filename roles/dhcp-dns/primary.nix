@@ -7,7 +7,7 @@
 let
   dns = import ./settings.nix { inherit lib; };
   directory = "/var/lib/bind";
-  credential = "ddns-secret:/var/lib/gateway-ddns/secret";
+  credential = "ddns-secret:${config.sops.secrets.gateway-ddns.path}";
   seed =
     zone:
     pkgs.writeText "${zone}.zone" ''
@@ -30,6 +30,16 @@ let
   '';
 in
 {
+  sops.useSystemdActivation = true;
+  sops.secrets.gateway-ddns = {
+    sopsFile = ../../secrets/gateway-ddns.yaml;
+    key = "tsig_secret";
+    mode = "0400";
+    restartUnits = [
+      "bind.service"
+      "kea-dhcp-ddns-server.service"
+    ];
+  };
   networking.resolvconf.useLocalResolver = false;
   services.bind = {
     enable = true;
@@ -67,27 +77,9 @@ in
     '';
   };
 
-  systemd.services.gateway-ddns-key = {
-    description = "Generate the local DHCP DNS update credential";
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      StateDirectory = "gateway-ddns";
-      StateDirectoryMode = "0700";
-      UMask = "0077";
-    };
-    # Only publish a complete key; subsequent boots must retain the same identity.
-    script = ''
-      if [ ! -s /var/lib/gateway-ddns/secret ]; then
-        ${pkgs.coreutils}/bin/head -c 32 /dev/urandom | ${pkgs.coreutils}/bin/base64 > /var/lib/gateway-ddns/secret.tmp
-        mv /var/lib/gateway-ddns/secret.tmp /var/lib/gateway-ddns/secret
-      fi
-    '';
-  };
-
   systemd.services.bind = {
-    requires = [ "gateway-ddns-key.service" ];
-    after = [ "gateway-ddns-key.service" ];
+    requires = [ "sops-install-secrets.service" ];
+    after = [ "sops-install-secrets.service" ];
     serviceConfig = {
       LoadCredential = [ credential ];
       UMask = "0077";
@@ -132,10 +124,10 @@ in
     };
   };
   systemd.services.kea-dhcp-ddns-server = {
-    requires = [ "gateway-ddns-key.service" ];
+    requires = [ "sops-install-secrets.service" ];
     wants = [ "bind.service" ];
     after = [
-      "gateway-ddns-key.service"
+      "sops-install-secrets.service"
       "bind.service"
     ];
     serviceConfig.LoadCredential = [ credential ];

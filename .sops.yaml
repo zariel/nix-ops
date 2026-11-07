@@ -3,7 +3,7 @@ keys:
   - &gateway age1skvf5vnhjcdms73vly896ewm0wc66njea9y0zuf2en9jfgy95fnqgp04yp
 
 creation_rules:
-  - path_regex: secrets/gateway\.yaml$
+  - path_regex: secrets/gateway(-ddns)?\.yaml$
     key_groups:
       - age:
           - *gaming

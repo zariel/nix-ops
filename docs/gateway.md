@@ -76,16 +76,25 @@ copy during that interval. A freshly installed VM needs an initial transfer
 before it can answer lease queries. DHCP DNS availability does not control VIP
 health or DHCP service startup.
 
-The local TSIG secret is generated once in `/var/lib/gateway-ddns/secret` and
-passed to BIND and D2 using systemd credentials. Only the three DNS VM addresses
-can query or transfer zones from the gateway's network listener. The update key
-can change A/DHCID records in the DHCP forward zone and PTR/DHCID records in the
-reverse zones, but cannot change zone authority.
+The TSIG secret is encrypted in `secrets/gateway-ddns.yaml` for the gateway and
+administrator age recipients. Sops-nix decrypts it to the root-only
+`/run/secrets/gateway-ddns` before BIND and D2 start; systemd credentials deliver
+it to both services. Changing the secret restarts both consumers. Only the three
+DNS VM addresses can query or transfer zones from the gateway's network listener.
+The update key can change A/DHCID records in the DHCP forward zone and PTR/DHCID
+records in the reverse zones, but cannot change zone authority.
 
 Preserve `/var/lib/bind` on all four machines, `/var/lib/kea` on the gateway,
-and `/var/lib/gateway-ddns` on the gateway across reinstalls. Initial zone files
-are seeded only when absent; ordinary deployment and restarts retain live data
-and journals.
+and the gateway's SSH host identity used for SOPS decryption across reinstalls.
+Retain the encrypted secret files and access to the administrator decryption
+identity. Initial zone files are seeded only when absent; ordinary deployment
+and restarts retain live data and journals.
+
+To rotate the TSIG secret, edit `secrets/gateway-ddns.yaml` with SOPS and deploy
+the gateway. Store a base64-encoded 32-byte random value under `tsig_secret`.
+No DNS VM secret changes are required. The runtime-generated
+`/run/named/kea-ddns.key` is recreated from the systemd credential at each BIND
+start and is not a separate source of truth.
 
 For rollout, deploy the gateway first, then each DNS VM. Existing leases populate
 DNS when clients renew; they are not imported from the removed static PTR files.
@@ -322,7 +331,8 @@ Before the first NixOS boot:
    (root-owned, mode `0600`), since its public key is the gateway recipient in
    `.sops.yaml`. Alternatively, obtain the new host's public key, convert it with
    `ssh-to-age`, update the gateway recipient and run
-   `sops updatekeys secrets/gateway.yaml` using the existing gaming identity before cutover.
+   `sops updatekeys secrets/gateway.yaml` and
+   `sops updatekeys secrets/gateway-ddns.yaml` using the existing gaming identity before cutover.
    Never commit the SSH private key. Verify WireGuard's public key still matches
    the existing clients. Edit the encrypted secret with `sops secrets/gateway.yaml`.
 3. Copy `/config/containers/matchbox` to `/var/lib/gateway/matchbox`.
