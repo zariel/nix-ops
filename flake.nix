@@ -157,6 +157,7 @@
       });
 
       nixosConfigurations = {
+        trusted-backup = mkSystem { name = "trusted-backup"; };
         dns1 = mkSystem {
           name = "dns1";
           extraModules = [ ./roles/server ];
@@ -192,6 +193,10 @@
       };
 
       deploy.nodes = {
+        trusted-backup = mkDeploy {
+          name = "trusted-backup";
+          addr = "10.254.254.2";
+        };
         ash = mkDeploy {
           name = "ash";
           addr = "10.1.1.55";
