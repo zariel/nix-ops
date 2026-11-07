@@ -292,6 +292,18 @@ in
 
   # Enable CUPS to print documents.
   services.printing.enable = true;
+  hardware.printers = {
+    ensurePrinters = [
+      {
+        name = "Brother_MFC_L2800DW";
+        description = "Brother MFC-L2800DW";
+        deviceUri = "ipp://printer.cbannister.casa/ipp/print";
+        model = "everywhere";
+        ppdOptions.PageSize = "A4";
+      }
+    ];
+    ensureDefaultPrinter = "Brother_MFC_L2800DW";
+  };
 
   # Enable sound with pipewire.
   services.pulseaudio.enable = false;
@@ -478,7 +490,6 @@ in
     lsof
     usbutils
     fio
-    cups-brother-mfcl2800dw
     nfs-utils
     libdrm
     libva-utils
