@@ -130,6 +130,16 @@ pkgs.testers.runNixOSTest {
     router.succeed("ip netns exec wan ip addr add 1.0.1.1/32 dev lo; ip route add 1.0.1.1/32 via 198.18.0.2")
     router.fail("ip netns exec wan curl --interface 1.0.1.1 -fsS --max-time 2 http://198.18.0.1:50413")
 
+    # Routed scanner access is limited to pods and the printer's TCP ports.
+    router.succeed("ip netns exec trusted ip addr add 10.1.2.70/24 dev peer")
+    router.succeed("ip netns exec transit ip addr add 172.20.0.10/32 dev lo; ip route add 172.20.0.0/16 via 10.254.0.1")
+    for port in (443, 54921, 444):
+        router.succeed(f"ip netns exec trusted python -m http.server {port} --bind 10.1.2.70 >/tmp/scanner-{port}.log 2>&1 &")
+    for port in (443, 54921):
+        router.wait_until_succeeds(f"ip netns exec transit curl --interface 172.20.0.10 -fsS --max-time 2 http://10.1.2.70:{port}")
+    router.fail("ip netns exec transit curl --interface 172.20.0.10 -fsS --max-time 2 http://10.1.2.70:444")
+    router.fail("ip netns exec transit curl --interface 10.254.0.1 -fsS --max-time 2 http://10.1.2.70:443")
+
     # IPv4 trust does not imply IPv6 trust. Internal ICMPv6 is permitted even
     # across pairs that deny TCP; WAN echo requests remain denied.
     for zone, interface, prefix in (

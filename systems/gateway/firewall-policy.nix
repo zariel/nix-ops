@@ -493,6 +493,15 @@ in
     transit.to.trusted = [
       icmp4
       (tcp {
+        saddr = setRef "transit_pods";
+        daddr = "10.1.2.70";
+        dport = [
+          443
+          54921
+        ];
+        comment = "Pod scanner access";
+      })
+      (tcp {
         daddr = setRef "metrics_targets";
         dport = [
           9100
