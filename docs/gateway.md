@@ -11,8 +11,8 @@ No installation or activation is performed by adding this host.
   each link. Native NixOS containers use systemd-nspawn to own their private
   namespaces and veth lifetime. Networkd configures links as they appear,
   independently of application readiness.
-- FRR owns BGP, PIM/IGMP/MLD and the static reject/Thread routes. Networkd is told
-  to leave foreign routes, nexthops and policy rules alone. There is no OSPF in
+- FRR owns BGP, PIM/IGMP/MLD and the static reject route. Networkd learns the Thread
+  OMR route from OTBR and leaves foreign routes, nexthops and policy rules alone. There is no OSPF in
   the live configuration, so none is enabled here.
 - nftables owns filtering, NAT, MSS adjustment and the TFTP conntrack helper.
   Its dedicated `inet gateway` table is replaced atomically; other tables and
@@ -101,6 +101,65 @@ Validate changes with the rule rendering check and both gateway VM checks shown 
 IPv4/IPv6 isolation, service exceptions, DHCP, TFTP, NAT, container traffic and
 firewall reloads. Inspect the applied policy with `nft list table inet gateway`;
 rule comments identify services and purposes.
+
+## Inspect live gateway state
+
+After deploying the gateway configuration, connect with your existing SSH
+administrator account and use `routerctl`. The command reads live kernel and
+FRR state without changing rules, connections, routes, or counters.
+
+```sh
+ssh chris@10.1.2.5
+routerctl list
+sudo routerctl firewall | less -S
+sudo routerctl nat
+sudo routerctl connections
+sudo routerctl bgp
+sudo routerctl bgp-neighbors 10.254.0.1
+sudo routerctl bgp-prefixes
+sudo routerctl bgp-route 172.53.53.53/32
+sudo routerctl route 172.53.53.53
+sudo routerctl igmp
+sudo routerctl mld
+sudo routerctl pim
+sudo routerctl multicast
+sudo routerctl links
+sudo routerctl qos
+sudo routerctl vrrp
+```
+
+The firewall report includes all nftables tables, rule handles, packet counters,
+and byte counters; it omits set elements to keep large blocklists readable. Use
+`sudo nft list set inet spamhaus_drop drop_v4` to inspect a blocklist's contents.
+NAT reports include the prerouting and postrouting rules and both IPv4 and IPv6
+translations, with original and reply tuples from conntrack.
+
+NAT rule counters count the first packet of each new connection. They do not
+measure the connection's total traffic. Connection accounting records packets
+and bytes in both directions for connections created after accounting is
+enabled. Existing connections retain their state and acquire accounting when
+they are replaced by new connections. Replacing firewall rules resets their
+counters; reading a report does not reset them.
+
+Use the native `watch` command for repeated samples, or JSON output for scripts:
+
+```sh
+sudo watch -d -n 2 routerctl nat
+sudo routerctl --json bgp
+ssh chris@10.1.2.5 'sudo routerctl --json mld'
+```
+
+Each report includes its timestamp, the native commands, their output, and exit
+status. Commands have a timeout and each report captures at most 2 MiB of output.
+A nonzero exit status and the JSON `incomplete` flag identify errors or partial
+results, including output truncation. To inspect a larger table, run the displayed
+native command directly with an appropriate filter. `bgp-route` accepts an IP
+address for a longest-prefix match or a CIDR prefix for an exact lookup; `route`
+accepts a destination IP for the kernel's selected path and source address.
+
+The VRRP report shows the addresses on `bond0.20` alongside keepalived's process
+state. The presence of `10.1.2.1/24` indicates local ownership; a running
+keepalived process can also be in BACKUP or FAULT.
 
 ## What applies without rebooting
 

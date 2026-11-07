@@ -9,6 +9,7 @@
     ./spamhaus.nix
     ./dhcp.nix
     ./services.nix
+    ./looking-glass.nix
     ./apps.nix
     ./qos.nix
   ];

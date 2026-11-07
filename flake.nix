@@ -146,6 +146,7 @@
         in
         nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
           gamemode-waybar = pkgs.callPackage ./packages/gamemode-waybar/package.nix { };
+          routerctl = pkgs.callPackage ./packages/routerctl/package.nix { };
         }
       );
 
@@ -244,6 +245,9 @@
               pkgs = import nixpkgs { inherit system; };
             };
             gateway-migration = import ./tests/gateway-migration.nix {
+              pkgs = import nixpkgs { inherit system; };
+            };
+            gateway-looking-glass = import ./tests/gateway-looking-glass.nix {
               pkgs = import nixpkgs { inherit system; };
             };
             gateway-spamhaus = import ./tests/gateway-spamhaus.nix {

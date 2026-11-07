@@ -146,16 +146,16 @@ in
           }
           chain prerouting {
             type nat hook prerouting priority dstnat; policy accept;
-            iifname { "bond0.40", "wg01" } ip daddr != 172.53.53.53 meta l4proto { tcp, udp } th dport 53 dnat ip to 172.53.53.53
-            iifname { "bond0.20", "bond0.40" } ip6 daddr != fd74:f571:d3bd:53::53 meta l4proto { tcp, udp } th dport 53 dnat ip6 to fd74:f571:d3bd:53::53
+            iifname { "bond0.40", "wg01" } ip daddr != 172.53.53.53 meta l4proto { tcp, udp } th dport 53 counter dnat ip to 172.53.53.53
+            iifname { "bond0.20", "bond0.40" } ip6 daddr != fd74:f571:d3bd:53::53 meta l4proto { tcp, udp } th dport 53 counter dnat ip6 to fd74:f571:d3bd:53::53
             # Management NTP interception applies to VLAN 100.
-            iifname { "bond0.100", "bond0.10", "bond0.20", "bond0.40", "wg01" } ip daddr != 10.254.254.1 udp dport 123 dnat ip to 10.254.254.1
-            iifname "wan0" tcp dport 59453 dnat ip to 10.1.2.60:59453
-            iifname "wan0" tcp dport 50413 dnat ip to 10.45.0.24:50413
+            iifname { "bond0.100", "bond0.10", "bond0.20", "bond0.40", "wg01" } ip daddr != 10.254.254.1 udp dport 123 counter dnat ip to 10.254.254.1
+            iifname "wan0" tcp dport 59453 counter dnat ip to 10.1.2.60:59453
+            iifname "wan0" tcp dport 50413 counter dnat ip to 10.45.0.24:50413
           }
           chain postrouting {
             type nat hook postrouting priority srcnat; policy accept;
-            oifname "wan0" meta nfproto ipv4 masquerade
+            oifname "wan0" meta nfproto ipv4 counter masquerade
           }
         '';
     };
