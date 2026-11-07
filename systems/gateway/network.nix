@@ -12,7 +12,7 @@ let
     };
     "20" = {
       addresses = [
-        "10.1.2.1/24"
+        "10.1.2.5/32"
         "fd74:f571:d3bd:20::1/64"
       ];
       mtu = 1500;
@@ -55,6 +55,8 @@ in
     "net.ipv6.conf.all.forwarding" = 1;
     "net.ipv4.conf.all.rp_filter" = 0;
     "net.ipv4.conf.default.rp_filter" = 0;
+    "net.ipv4.conf.all.send_redirects" = 0;
+    "net.ipv4.conf.default.send_redirects" = 0;
     "net.ipv4.ip_forward_use_pmtu" = 1;
     "net.ipv4.tcp_mtu_probing" = 1;
   };
@@ -232,7 +234,28 @@ in
         {
           matchConfig.Name = "bond0.${id}";
           address = vlan.addresses;
-          networkConfig.IPv6AcceptRA = false;
+          networkConfig = {
+            IPv6AcceptRA = false;
+            IPv6SendRA = builtins.elem id [
+              "20"
+              "40"
+            ];
+          }
+          // lib.optionalAttrs (id == "20") {
+            # Keepalived owns the floating /24; networkd owns only the node /32.
+            KeepConfiguration = "static";
+          };
+        }
+        // lib.optionalAttrs (id == "20") {
+          # Standby still needs direct ARP and replies without a connected /24.
+          routes = [
+            {
+              Destination = "10.1.2.0/24";
+              Scope = "link";
+              PreferredSource = "10.1.2.5";
+              Metric = 100;
+            }
+          ];
         }
         //
           lib.optionalAttrs
@@ -241,10 +264,6 @@ in
               "40"
             ])
             {
-              networkConfig = {
-                IPv6AcceptRA = false;
-                IPv6SendRA = true;
-              };
               ipv6SendRAConfig = {
                 # Advertise internal routes without claiming Internet reachability.
                 RouterLifetimeSec = if ipv6WanEnabled then "30min" else "0";

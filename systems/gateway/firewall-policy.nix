@@ -323,6 +323,12 @@ in
       icmp4
     ];
     local.to.trusted = [
+      {
+        l4proto = 112;
+        saddr = "10.1.2.5";
+        daddr = "10.1.2.6";
+        comment = "VRRP to trusted backup";
+      }
       icmp4
       {
         l4proto = "igmp";
@@ -542,6 +548,12 @@ in
     trusted.to.iot = [ accept ];
     trusted.to.lan = [ accept ];
     trusted.to.local = [
+      {
+        l4proto = 112;
+        saddr = "10.1.2.6";
+        daddr = "10.1.2.5";
+        comment = "VRRP from trusted backup";
+      }
       dhcp
       ntp4
       tftp
