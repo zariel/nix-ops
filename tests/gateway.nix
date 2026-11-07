@@ -164,12 +164,11 @@ pkgs.testers.runNixOSTest {
     router.succeed("ip netns exec guest ping -6 -c 1 -W 2 fd00:20::2")
     router.fail("ip netns exec wan ping -6 -c 1 -W 2 fd00:20::2")
 
-    # The Thread prefix exception grants trusted clients access only to that
-    # prefix within IoT. Transit retains unrestricted IPv6 access to the router.
+    # Thread routing belongs to its infrastructure VLAN, never an IoT next hop.
     router.succeed("ip netns exec iot ip -6 address add fd42:dfb5:24e4:1::2/64 dev peer nodad")
     router.succeed("ip -6 route add fd42:dfb5:24e4:1::/64 via fd00:40::2")
     router.fail("ip netns exec trusted curl -gfsS --max-time 2 http://[fd00:40::2]:8081")
-    router.succeed("ip netns exec trusted curl -gfsS --max-time 2 http://[fd42:dfb5:24e4:1::2]:8081")
+    router.fail("ip netns exec trusted curl -gfsS --max-time 2 http://[fd42:dfb5:24e4:1::2]:8081")
     router.succeed("python -m http.server 8081 --bind :: >/tmp/router-ipv6.log 2>&1 &")
     router.wait_until_succeeds("ip netns exec transit curl -gfsS --max-time 2 http://[fd00:3001::1]:8081")
     router.fail("ip netns exec guest curl -gfsS --max-time 2 http://[fd00:30::1]:8081")

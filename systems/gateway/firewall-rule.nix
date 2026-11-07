@@ -6,6 +6,7 @@ let
     l4proto = "meta l4proto";
     saddr = "${addressFamily} saddr";
     daddr = "${addressFamily} daddr";
+    etherSaddr = "ether saddr";
     sport = "th sport";
     dport = "th dport";
     icmpv6Type = "icmpv6 type";
@@ -124,6 +125,7 @@ lib.concatStringsSep " " (
       "l4proto"
       "saddr"
       "daddr"
+      "etherSaddr"
       "sport"
       "dport"
       "icmpv6Type"

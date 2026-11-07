@@ -214,9 +214,10 @@ pkgs.testers.runNixOSTest {
       networking.firewall.enable = false;
       environment.systemPackages = [
         pkgs.curl
-        pkgs.python3
+        (pkgs.python3.withPackages (ps: [ ps.scapy ]))
         pkgs.iputils
       ];
+      environment.etc."gateway-matter.py".source = ./gateway-matter.py;
     };
   };
   testScript = builtins.readFile ./gateway-migration.py;

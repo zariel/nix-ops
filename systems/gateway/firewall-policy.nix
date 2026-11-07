@@ -19,6 +19,8 @@ let
     ];
     guest = [ "bond0.30" ];
     iot = [ "bond0.40" ];
+    thread = [ "bond0.1100" ];
+    matter = [ "bond0.1101" ];
     containers = [ "ve-*" ];
     transit = [ "bond0.3001" ];
   };
@@ -653,6 +655,11 @@ in
       {
         iot.to.containers = [ accept ];
         iot.to.local = [
+          (icmpv6 {
+            icmpv6Type = "nd-router-advert";
+            verdict = "drop";
+            comment = "Ignore IoT router advertisements";
+          })
           icmp6
           (udp {
             dport = 5353;
@@ -702,13 +709,6 @@ in
         local.to.wan = [ accept ];
         transit.to.local = [ accept ];
         trusted.to.containers = [ accept ];
-        trusted.to.iot = [
-          icmp6
-          {
-            daddr = "fd42:dfb5:24e4:1::/64";
-            comment = "Thread prefix";
-          }
-        ];
         trusted.to.local = [
           icmp6
           (udp {
@@ -730,6 +730,97 @@ in
           })
         ];
         trusted.to.wan = [ accept ];
+        thread.to.local = [
+          (icmpv6 {
+            icmpv6Type = "nd-router-advert";
+            saddr = "fe80::892:17ff:febd:446e";
+            etherSaddr = "0a:92:17:bd:44:6e";
+            comment = "OMR route advertisements from OTBR";
+          })
+          (icmpv6 {
+            icmpv6Type = "nd-router-advert";
+            verdict = "drop";
+            comment = "Ignore other infrastructure router advertisements";
+          })
+          icmp6
+          (udp {
+            sport = 5353;
+            dport = 5353;
+            comment = "mDNS";
+          })
+        ];
+        local.to.thread = [
+          icmp6
+          (udp {
+            sport = 5353;
+            dport = 5353;
+            comment = "mDNS";
+          })
+        ];
+        matter.to.local = [
+          icmp6
+          (udp {
+            sport = 5353;
+            dport = 5353;
+            comment = "mDNS";
+          })
+        ];
+        local.to.matter = [
+          icmp6
+          (udp {
+            sport = 5353;
+            dport = 5353;
+            comment = "mDNS";
+          })
+        ];
+        matter.to.thread = [
+          icmp6
+          (udp {
+            saddr = "fd74:f571:d3bd:1061::2";
+            daddr = "fd42:dfb5:24e4:1::/64";
+          })
+        ];
+        thread.to.matter = [
+          icmp6
+          (udp {
+            saddr = "fd42:dfb5:24e4:1::/64";
+            daddr = "fd74:f571:d3bd:1061::2";
+          })
+        ];
+        matter.to.iot = [
+          icmp6
+          (udp {
+            saddr = "fd74:f571:d3bd:1061::2";
+            daddr = "fd74:f571:d3bd:40::/64";
+          })
+        ];
+        iot.to.matter = [
+          icmp6
+          (udp {
+            saddr = "fd74:f571:d3bd:40::/64";
+            daddr = "fd74:f571:d3bd:1061::2";
+          })
+        ];
+        trusted.to.thread = [
+          icmp6
+          (udp {
+            daddr = [
+              "fd42:dfb5:24e4:1::/64"
+              "fd74:f571:d3bd:1060::2"
+            ];
+          })
+        ];
+        thread.to.trusted = [
+          icmp6
+          (udp {
+            saddr = "fd42:dfb5:24e4:1::/64";
+            daddr = "fd74:f571:d3bd:20::/64";
+          })
+        ];
+        trusted.to.matter = [
+          icmp6
+          (udp { daddr = "fd74:f571:d3bd:1061::2"; })
+        ];
         wan.to = lib.genAttrs internal (
           destination:
           icmp6Errors

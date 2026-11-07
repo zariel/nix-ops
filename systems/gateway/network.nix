@@ -32,6 +32,14 @@ let
       addresses = [ "10.1.0.1/24" ];
       mtu = 1500;
     };
+    "1100" = {
+      addresses = [ "fd74:f571:d3bd:1060::1/64" ];
+      mtu = 1500;
+    };
+    "1101" = {
+      addresses = [ "fd74:f571:d3bd:1061::1/64" ];
+      mtu = 1500;
+    };
     "3001" = {
       addresses = [ "10.254.0.0/31" ];
       mtu = 9000;
@@ -235,10 +243,11 @@ in
           matchConfig.Name = "bond0.${id}";
           address = vlan.addresses;
           networkConfig = {
-            IPv6AcceptRA = false;
+            IPv6AcceptRA = id == "1100";
             IPv6SendRA = builtins.elem id [
               "20"
               "40"
+              "1100"
             ];
           }
           // lib.optionalAttrs (id == "20") {
@@ -256,6 +265,28 @@ in
               Metric = 100;
             }
           ];
+        }
+        // lib.optionalAttrs (id == "1100") {
+          # Learn OMR reachability without accepting OTBR as a default router,
+          # address allocator, DNS server or authority over the link MTU.
+          ipv6AcceptRAConfig = {
+            RouterAllowList = "fe80::892:17ff:febd:446e";
+            RouteAllowList = "fd42:dfb5:24e4:1::/64";
+            UseRoutePrefix = true;
+            UseGateway = false;
+            UseAutonomousPrefix = false;
+            UseOnLinkPrefix = false;
+            UseMTU = false;
+            UseDNS = false;
+            UseDomains = false;
+            DHCPv6Client = false;
+            UseRedirect = false;
+          };
+          ipv6SendRAConfig = {
+            RouterLifetimeSec = "0";
+            EmitDNS = false;
+          };
+          ipv6Prefixes = [ { Prefix = "fd74:f571:d3bd:1060::/64"; } ];
         }
         //
           lib.optionalAttrs

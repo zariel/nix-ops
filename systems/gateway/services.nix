@@ -37,16 +37,26 @@
   };
   services.avahi = {
     enable = true;
-    allowInterfaces = [
-      "bond0.20"
-      "bond0.40"
-    ];
-    reflector = true;
     openFirewall = false;
-    extraConfig = ''
-      reflect-filters=_hap._tcp.local,_hap._udp.local,_airplay._tcp.local,_raop._tcp.local,_ipp._tcp.local,_printer._tcp.local,_companion-link._tcp.local,_meshcop._udp.local,_matterc._udp.local,_matter._tcp.local,_matterd._udp.local
-    '';
+    settings = {
+      server = {
+        use-ipv4 = true;
+        use-ipv6 = true;
+        allow-interfaces = [
+          "bond0.20"
+          "bond0.40"
+          "bond0.1100"
+          "bond0.1101"
+        ];
+      };
+      reflector = {
+        enable-reflector = true;
+        reflect-filters = "_hap._tcp.local,_hap._udp.local,_airplay._tcp.local,_raop._tcp.local,_ipp._tcp.local,_printer._tcp.local,_companion-link._tcp.local,_meshcop._udp.local,_matterc._udp.local,_matter._tcp.local,_matterd._udp.local";
+      };
+    };
   };
+  # Avahi owns mDNS sockets and reflection; resolved handles unicast DNS.
+  services.resolved.settings.Resolve.MulticastDNS = false;
   environment.systemPackages = with pkgs; [
     tcpdump
     conntrack-tools

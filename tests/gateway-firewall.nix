@@ -130,6 +130,14 @@ let
       });
       expected = "meta l4proto ipv6-icmp icmpv6 type packet-too-big counter accept";
     };
+    testRouterIdentity = {
+      expr = render "ipv6" (icmpv6 {
+        saddr = "fe80::892:17ff:febd:446e";
+        etherSaddr = "0a:92:17:bd:44:6e";
+        icmpv6Type = "nd-router-advert";
+      });
+      expected = "meta l4proto ipv6-icmp ip6 saddr fe80::892:17ff:febd:446e ether saddr 0a:92:17:bd:44:6e icmpv6 type nd-router-advert counter accept";
+    };
     testDrop = {
       expr = render "ipv4" {
         saddr.set = "geoip_cn_ru";
