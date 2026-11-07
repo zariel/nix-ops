@@ -10,9 +10,10 @@ with lib;
 let
   cfg = config.services.dnsVip;
   gatewayAddress = import ./gateway-address.nix;
+  dns = import ../dhcp-dns/settings.nix { inherit lib; };
   bindZoneChecks = attrsets.mapAttrsToList (
     zoneName: zoneCfg: "${pkgs.bind}/bin/named-checkzone ${zoneName} ${zoneCfg.file}"
-  ) config.services.bind.zones;
+  ) (attrsets.filterAttrs (_: zone: zone.master) config.services.bind.zones);
 
   bindPreflight = pkgs.writeShellScript "bind-preflight" ''
     set -euo pipefail
@@ -23,8 +24,16 @@ in
 {
   config = mkIf cfg.enable {
     services.bind = {
-      listenOn = [ "127.0.53.10" ];
+      listenOn = [
+        "127.0.53.10"
+        cfg.nodeIp
+      ];
       ipv4Only = true;
+      directory = "/var/lib/bind";
+      extraOptions = ''
+        recursion no;
+        transfer-source ${cfg.nodeIp};
+      '';
 
       cacheNetworks = [
         "10.1.0.0/24" # LAN
@@ -67,46 +76,23 @@ in
           file = ./files/bind/zones/db.unifi;
         };
 
-        "0.1.10.in-addr.arpa" = {
-          master = true;
-          file = ./files/bind/zones/db.0.1.10.in-addr.arpa;
-        };
-
-        "1.1.10.in-addr.arpa" = {
-          master = true;
-          file = ./files/bind/zones/db.1.1.10.in-addr.arpa;
-        };
-
-        "2.1.10.in-addr.arpa" = {
-          master = true;
-          file = ./files/bind/zones/db.2.1.10.in-addr.arpa;
-        };
-
-        "3.1.10.in-addr.arpa" = {
-          master = true;
-          file = ./files/bind/zones/db.3.1.10.in-addr.arpa;
-        };
-
+        # ROON is not yet a gateway DHCP network, so its reverse zone stays static.
         "4.1.10.in-addr.arpa" = {
           master = true;
           file = ./files/bind/zones/db.4.1.10.in-addr.arpa;
         };
-
-        "8.1.10.in-addr.arpa" = {
-          master = true;
-          file = ./files/bind/zones/db.8.1.10.in-addr.arpa;
-        };
-
+        # OOB devices are statically addressed and never use DHCP, so this zone
+        # stays a static master after the gateway takes over the DHCP networks.
         "254.1.10.in-addr.arpa" = {
           master = true;
           file = ./files/bind/zones/db.254.1.10.in-addr.arpa;
         };
-
-        "2.168.192.in-addr.arpa" = {
-          master = true;
-          file = ./files/bind/zones/db.2.168.192.in-addr.arpa;
-        };
-      };
+      }
+      // genAttrs dns.zones (zone: {
+        master = false;
+        masters = [ dns.primary ];
+        file = "/var/lib/bind/${zone}";
+      });
     };
 
     # Ensure bind starts after the bind interface is ready

@@ -5,37 +5,26 @@
 }:
 let
   reservations = import ./reservations.nix;
-  subnets = {
-    servers = {
-      id = 10;
-      prefix = "10.1.1";
-    };
-    trusted = {
-      id = 20;
-      prefix = "10.1.2";
-    };
-    guest = {
-      id = 30;
-      prefix = "192.168.2";
-    };
-    iot = {
-      id = 40;
-      prefix = "10.1.3";
-    };
-    lan = {
-      id = 100;
-      prefix = "10.1.0";
-    };
-  };
+  dns = import ../../roles/dhcp-dns/settings.nix { inherit lib; };
+  subnets = dns.networks;
   interfaces = lib.mapAttrsToList (_: subnet: "bond0.${toString subnet.id}") subnets;
   networkReady = map (interface: "systemd-networkd-wait-online@${interface}.service") interfaces;
 in
 {
+  imports = [ ../../roles/dhcp-dns/primary.nix ];
+
   services.kea.dhcp4 = {
     enable = true;
     settings = {
       authoritative = true;
       valid-lifetime = 28800;
+      dhcp-ddns.enable-updates = true;
+      ddns-override-no-update = true;
+      ddns-override-client-update = true;
+      ddns-replace-client-name = "when-not-present";
+      ddns-generated-prefix = "host";
+      # Renewals repair missed updates after an interruption or initial migration.
+      ddns-update-on-renew = true;
       interfaces-config.interfaces = interfaces;
       lease-database = {
         type = "memfile";
@@ -110,6 +99,7 @@ in
         subnet = "${subnet.prefix}.0/24";
         pools = [ { pool = "${subnet.prefix}.200 - ${subnet.prefix}.254"; } ];
         valid-lifetime = if zone == "guest" then 3600 else 28800;
+        ddns-qualifying-suffix = "${zone}.${dns.domain}";
         reservations = lib.mapAttrsToList (name: values: {
           hostname = name;
           hw-address = builtins.elemAt values 0;

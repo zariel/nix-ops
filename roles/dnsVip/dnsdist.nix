@@ -9,6 +9,7 @@ with lib;
 
 let
   cfg = config.services.dnsVip;
+  dhcpDns = import ../dhcp-dns/settings.nix { inherit lib; };
   kubernetesDomains = generators.toLua { multiline = false; } cfg.kubernetesDomains;
   kubernetesHealthCheckDomain = builtins.toJSON "${builtins.head cfg.kubernetesDomains}.";
   dnsdistConfig =
@@ -16,10 +17,12 @@ let
       [
         "@KUBERNETES_DOMAINS@"
         "@KUBERNETES_HEALTH_CHECK_DOMAIN@"
+        "@DHCP_ZONES@"
       ]
       [
         kubernetesDomains
         kubernetesHealthCheckDomain
+        (generators.toLua { multiline = false; } dhcpDns.zones)
       ]
       (builtins.readFile ./files/dnsdist/config.lua);
   dnsdistConfigPath = pkgs.writeText "dnsdist.conf" dnsdistConfig;

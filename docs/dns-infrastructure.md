@@ -17,7 +17,7 @@ Client Query (any configured IPv4 VIP)
     ↓
 DNSdist (Load Balancer & Router)
     ↓
-    ├─→ Local Bind (cbannister.casa, unifi, reverse DNS)
+    ├─→ Local Bind (static forward zones, replicated DHCP forward/reverse zones)
     ├─→ K8s Bind (cbannister.xyz, rociobolanos.com)
     ├─→ Local Blocky (Ad-blocking)
     └─→ Cloudflare DNS over TLS (Explicitly unfiltered networks)
@@ -141,11 +141,27 @@ Key points:
 ### 5. Backend Services
 
 **Bind (Local Authoritative DNS)**
-- Listens on: `127.0.53.10:53`
+- Listens on: `127.0.53.10:53` and the node's `10.254.53.x:53` address
 - Hosts zones:
   - `cbannister.casa` (home domain)
   - `unifi` (network management)
-  - Multiple reverse DNS zones
+  - `dhcp.cbannister.casa` (secondary)
+  - Reverse zones for `10.1.0.0/24`, `10.1.1.0/24`, `10.1.2.0/24`,
+    `10.1.3.0/24` and `192.168.2.0/24` (secondaries)
+
+The gateway runs the writable BIND primary for DHCP zones at `10.254.254.1`.
+Kea D2 updates it using a local TSIG credential. Each DNS VM stores its secondary
+zones and journals under `/var/lib/bind` and answers locally. Queries are not
+forwarded to the gateway. During a gateway outage, each VM can continue serving
+and restart from disk until the zones' 30-day SOA expiry interval elapses without
+a successful refresh. Static forward zones and the VIP health check remain
+independent of gateway DNS.
+
+Hardcoded reverse zone files are removed, including the obsolete `10.1.8.0/24`
+zone. PTR records follow active DHCPv4 leases, including reservations; static
+addresses and inactive reservations are not published. See
+[DHCP DNS operations](gateway.md#dhcp-dns) for names, rollout, persistence and
+verification commands.
 
 **Blocky (Ad-Blocking DNS)**
 - Listens on: `127.0.53.20:53`
@@ -254,14 +270,16 @@ roles/dnsVip/
     │   └── config.lua               # DNSdist routing rules & backend health
     └── bind/zones/
         ├── db.cbannister.casa       # Home domain zone
-        ├── db.unifi                 # Unifi zone
-        └── db.*.in-addr.arpa        # Reverse DNS zones
+        └── db.unifi                 # Unifi zone
 
 systems/
 ├── dns1/default.nix                 # nodeIp: 10.254.53.0
 ├── dns2/default.nix                 # nodeIp: 10.254.53.2
 └── dns3/default.nix                 # nodeIp: 10.254.53.4
 ```
+
+DHCP forward and reverse copies are persisted in `/var/lib/bind` on each VM.
+The shared network definitions and gateway primary are in `roles/dhcp-dns/`.
 
 Kubernetes authoritative zones are configured once in
 `services.dnsVip.kubernetesDomains` in `roles/dnsVip/default.nix`. DNSdist

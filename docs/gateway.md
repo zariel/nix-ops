@@ -18,7 +18,8 @@ No installation or activation is performed by adding this host.
   Its dedicated `inet gateway` table is replaced atomically; other tables and
   conntrack state are not flushed.
 - Kea supplies DHCPv4 with persistent memfile leases. Atftpd supplies TFTP.
-  The external DNS VIP remains authoritative.
+  Kea D2 updates lease records in the gateway's BIND primary. The three DNS VMs
+  serve persistent secondary copies through the DNS VIP.
   Reservations are ordinary Nix entries
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
   All 58 live reservations are included, including MACs used in different VLANs.
@@ -45,6 +46,62 @@ UniFi discovery options. No SQL database or HTTP control API is enabled.
 `services.atftpd` serves the boot assets from `/var/lib/tftpboot`.
 Kea waits for its five LAN interfaces through networkd's per-interface readiness
 units; it does not wait for the WAN or unused ports.
+
+## DHCP DNS
+
+The gateway is the writable primary for `dhcp.cbannister.casa` and the reverse
+zones of its five DHCPv4 networks. Kea D2 submits authenticated updates over
+loopback. Each DNS VM transfers these zones from `10.254.254.1` and answers
+queries from its local persistent copy. Clients continue using `172.53.53.53`.
+Static `cbannister.casa` and `unifi` forward zones remain managed independently
+on each DNS VM.
+
+Lease names use `<hostname>.<network>.dhcp.cbannister.casa`. Reservation names
+take precedence over names supplied by those clients. Unnamed dynamic clients
+receive names such as `host-10-1-2-200.trusted.dhcp.cbannister.casa`. The network
+suffix keeps names separate when a device uses more than one VLAN. Kea accepts
+client-supplied names, but D2 can write forward records only in the DHCP zone.
+Kea updates A and PTR records on acquisition and renewal, and removes them on
+release or lease reclamation.
+
+There are no hardcoded PTR records. A reservation gets a PTR when it obtains a
+lease; an offline reservation or a device configured with a static address does
+not get a PTR from this mechanism. The obsolete `10.1.8.0/24` reverse zone is
+removed. SLAAC and Thread addresses are outside this DHCPv4 integration.
+
+The primary sends zone notifications to all three DNS VMs. A gateway outage
+stops changes, but existing secondary copies remain authoritative for up to
+30 days without a successful refresh. Each VM can restart and use its saved
+copy during that interval. A freshly installed VM needs an initial transfer
+before it can answer lease queries. DHCP DNS availability does not control VIP
+health or DHCP service startup.
+
+The local TSIG secret is generated once in `/var/lib/gateway-ddns/secret` and
+passed to BIND and D2 using systemd credentials. Only the three DNS VM addresses
+can query or transfer zones from the gateway's network listener. The update key
+can change A/DHCID records in the DHCP forward zone and PTR/DHCID records in the
+reverse zones, but cannot change zone authority.
+
+Preserve `/var/lib/bind` on all four machines, `/var/lib/kea` on the gateway,
+and `/var/lib/gateway-ddns` on the gateway across reinstalls. Initial zone files
+are seeded only when absent; ordinary deployment and restarts retain live data
+and journals.
+
+For rollout, deploy the gateway first, then each DNS VM. Existing leases populate
+DNS when clients renew; they are not imported from the removed static PTR files.
+Verify a leased address through each VM before relying on the VIP:
+
+```sh
+dig @10.254.53.0 -x 10.1.2.10
+dig @10.254.53.2 -x 10.1.2.10
+dig @10.254.53.4 -x 10.1.2.10
+dig @172.53.53.53 chris-iphone.trusted.dhcp.cbannister.casa A
+```
+
+Use `journalctl -u kea-dhcp-ddns-server -u bind` on the gateway to inspect
+updates, and `journalctl -u bind` on a DNS VM to inspect transfers. The
+`checks.x86_64-linux.dhcp-dns` VM test covers real leases, replication, record
+removal, primary recovery and a DNS VM reboot while the primary is unavailable.
 
 Networkd fits a router whose physical topology changes infrequently. NetworkManager
 connection profiles are an alternative when frequent interactive link changes

@@ -157,17 +157,14 @@ addAction(QNameSuffixRule('mask-h2.icloud.com'), ERCodeAction(DNSRCode.NXDOMAIN)
 -- send anything from k8s to cloudflare
 
 
--- Reverse DNS zones to bind
-addAction({
-    '0.1.10.in-addr.arpa',    -- LAN reverse
-    '1.1.10.in-addr.arpa',    -- SERVERS reverse
-    '2.1.10.in-addr.arpa',    -- TRUSTED reverse
-    '3.1.10.in-addr.arpa',    -- IOT reverse
-    '4.1.10.in-addr.arpa',    -- ROON reverse
-    '8.1.10.in-addr.arpa',    -- K8S reverse
-    '254.1.10.in-addr.arpa',  -- OOB reverse
-    '2.168.192.in-addr.arpa'  -- GUEST reverse
-}, PoolAction('bind'))
+-- Lease names and reverse zones are answered from this node's local replicas.
+addAction(@DHCP_ZONES@, PoolAction('bind'))
+
+-- ROON is not yet a gateway DHCP network; its reverse zone is static in bind.
+addAction('4.1.10.in-addr.arpa', PoolAction('bind'))
+
+-- OOB devices are statically addressed; their reverse zone is static in bind.
+addAction('254.1.10.in-addr.arpa', PoolAction('bind'))
 
 -- guest, iot and roon straight to cloudflare
 addAction({"192.168.2.0/24", "10.1.3.0/24", "10.1.4.0/24"}, PoolAction("cloudflare"))

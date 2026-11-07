@@ -1,5 +1,6 @@
 { lib }:
 let
+  dhcpDns = import ../../roles/dhcp-dns/settings.nix { inherit lib; };
   inherit (import ./firewall-helpers.nix)
     addressSet
     portSet
@@ -312,6 +313,12 @@ in
       })
     ];
     local.to.transit = [
+      (tcpUdp {
+        daddr = dhcpDns.replicas;
+        dport = 53;
+        saddr = dhcpDns.primary;
+        comment = "DNS zone notifications";
+      })
       {
         l4proto = 89;
         comment = "Routing protocol 89";
@@ -449,6 +456,12 @@ in
       })
     ];
     transit.to.local = [
+      (tcpUdp {
+        daddr = dhcpDns.primary;
+        saddr = dhcpDns.replicas;
+        dport = 53;
+        comment = "DHCP DNS replication";
+      })
       {
         l4proto = 89;
         comment = "Routing protocol 89";

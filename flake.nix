@@ -240,6 +240,7 @@
           (deploy-rs.lib.x86_64-linux.deployChecks self.deploy)
           // {
             dns-vip = import ./tests/dns-vip.nix { pkgs = import nixpkgs { inherit system; }; };
+            dhcp-dns = import ./tests/dhcp-dns.nix { pkgs = import nixpkgs { inherit system; }; };
             gateway = import ./tests/gateway.nix { pkgs = import nixpkgs { inherit system; }; };
             gateway-firewall = import ./tests/gateway-firewall.nix {
               pkgs = import nixpkgs { inherit system; };
