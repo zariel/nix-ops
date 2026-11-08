@@ -2,7 +2,7 @@
 $TTL 1h
 $ORIGIN 1.1.10.in-addr.arpa.
 @ IN SOA gateway.cbannister.casa. gateway.cbannister.casa. (
-  1708606198       ; serial number
+  2026110801       ; serial number
   2h               ; refresh period
   1h               ; retry period
   14d              ; expire time
@@ -18,7 +18,7 @@ $ORIGIN 1.1.10.in-addr.arpa.
 12   IN  PTR  k8s-2.cbannister.casa.
 13   IN  PTR  k8s-3.cbannister.casa.
 14   IN  PTR  k8s-4.cbannister.casa.
-30   IN  PTR  pbj-ipmi.cbannister.casa.
+30   IN  PTR  pve-ipmi.cbannister.casa.
 31   IN  PTR  pbj.cbannister.casa.
 40   IN  PTR  nas.cbannister.casa.
 41   IN  PTR  postgres.cbannister.casa.
