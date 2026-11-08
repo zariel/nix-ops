@@ -2,7 +2,7 @@
 $TTL 1h
 $ORIGIN 0.1.10.in-addr.arpa.
 @ IN SOA gateway.cbannister.casa. gateway.cbannister.casa. (
-  1708606198       ; serial number
+  2026110802       ; serial number
   2h               ; refresh period
   1h               ; retry period
   14d              ; expire time
@@ -20,4 +20,5 @@ $ORIGIN 0.1.10.in-addr.arpa.
 14   IN  PTR  switch-lounge-mini.cbannister.casa.
 21   IN  PTR  ap01.cbannister.casa.
 22   IN  PTR  ap02.cbannister.casa.
+31   IN  PTR  pdu.cbannister.casa.
 100  IN  PTR  pikvm.cbannister.casa.
