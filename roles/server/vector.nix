@@ -178,7 +178,7 @@ in
             "blocky_query_cleanup"
             "blocky_query_route._unmatched"
           ];
-          address = "10.45.0.2:6004";
+          address = "http://10.45.0.2:6004";
           version = "2";
           compression = "zstd";
           acknowledgements.enabled = true;
