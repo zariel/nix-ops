@@ -9,6 +9,9 @@ let
   metricsAddress = metricsAddresses.${config.networking.hostName} or "127.0.0.1";
 in
 {
+  # Keep log forwarding independent of DNS; this is the internal HTTPS gateway VIP.
+  networking.hosts."10.45.0.10" = [ "vector.cbannister.xyz" ];
+
   services.vector = {
     enable = true;
     journaldAccess = true;
@@ -173,14 +176,19 @@ in
 
       sinks = {
         kubernetes_vector = {
-          type = "vector";
+          type = "http";
           inputs = [
             "blocky_query_cleanup"
             "blocky_query_route._unmatched"
           ];
-          address = "http://10.45.0.2:6004";
-          version = "2";
+          uri = "https://vector.cbannister.xyz/";
+          encoding.codec = "json";
           compression = "zstd";
+          batch.max_bytes = 1048576;
+          healthcheck = {
+            enabled = true;
+            uri = "https://vector.cbannister.xyz/health";
+          };
           acknowledgements.enabled = true;
           buffer = {
             type = "disk";
