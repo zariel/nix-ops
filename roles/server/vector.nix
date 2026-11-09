@@ -150,23 +150,14 @@ in
               .dns_response_code = response_code
             }
 
-            ._dns_is_abnormal =
-              includes(["BLOCKED", "REBIND", "BOGUS"], response_type) ||
-              includes(["SERVFAIL", "REFUSED", "FORMERR", "NOTIMP"], response_code)
           '';
-        };
-
-        abnormal_blocky_query = {
-          type = "filter";
-          inputs = [ "blocky_query_classify" ];
-          condition = ".dns_parse_error == true || ._dns_is_abnormal == true";
         };
 
         blocky_query_cleanup = {
           type = "remap";
-          inputs = [ "abnormal_blocky_query" ];
+          # Retain every query for client and allow/block diagnosis in Grafana.
+          inputs = [ "blocky_query_classify" ];
           source = ''
-            del(._dns_is_abnormal)
             if .dns_parse_error == false {
               del(.dns_parse_error)
             }
