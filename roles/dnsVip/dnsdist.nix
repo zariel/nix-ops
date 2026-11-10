@@ -31,9 +31,14 @@ in
 {
   config = mkIf cfg.enable {
     services.dnsdist = {
-      listenAddress = "172.53.53.53";
+      listenAddress = builtins.head cfg.ipv4Addresses;
       listenPort = 53;
-      extraConfig = dnsdistConfig;
+      extraConfig =
+        concatMapStringsSep "\n" (
+          address: "addLocal(${builtins.toJSON "${address}:53"}, {reusePort=true})"
+        ) (builtins.tail cfg.ipv4Addresses)
+        + "\n"
+        + dnsdistConfig;
     };
 
     # Ensure dnsdist starts after the dnsvip interface is ready and after bind/blocky are running

@@ -22,6 +22,20 @@ in
   options.services.dnsVip = {
     enable = mkEnableOption "DNS VIP anycast service";
 
+    ipv4Addresses = mkOption {
+      type = types.nonEmptyListOf types.str;
+      default = [ "172.53.53.53" ];
+      example = [
+        "172.53.53.53"
+        "10.254.253.53"
+      ];
+      description = ''
+        IPv4 VIP addresses, without prefix lengths. Each address is assigned
+        to dnsvip as a /32, served by dnsdist, and advertised through BGP
+        while the node is healthy.
+      '';
+    };
+
     nodeIp = mkOption {
       type = types.str;
       description = "Node IP address (used for BIRD router-id and health check identification)";
@@ -74,10 +88,7 @@ in
       networks."20-dnsvip" = {
         matchConfig.Name = "dnsvip";
         networkConfig.ConfigureWithoutCarrier = true;
-        address = [
-          "172.53.53.53/32"
-          "fd74:f571:d3bd:53::53/128"
-        ];
+        address = map (address: "${address}/32") cfg.ipv4Addresses ++ [ "fd74:f571:d3bd:53::53/128" ];
       };
 
       # Bind dummy interface

@@ -2,12 +2,12 @@
 
 ## Overview
 
-The DNS infrastructure uses an anycast Virtual IP (VIP) setup with three redundant DNS nodes (dns1, dns2, dns3) providing high availability DNS services to the home network. All nodes advertise the same VIP address (`172.53.53.53`) via BGP, and clients automatically connect to the nearest/healthiest node.
+The DNS infrastructure uses an anycast Virtual IP (VIP) setup with three redundant DNS nodes (dns1, dns2, dns3) providing high availability DNS services to the home network. All nodes are configured to advertise `172.53.53.53` and `10.254.253.53` via BGP during the migration to private addressing, and clients automatically connect to the nearest/healthiest node.
 
 ## Architecture
 
 ```
-Client Query (172.53.53.53)
+Client Query (any configured IPv4 VIP)
     ↓
 DNSdist (Load Balancer & Router)
     ↓
@@ -20,10 +20,37 @@ DNSdist (Load Balancer & Router)
 ## Components
 
 ### 1. Virtual IP (VIP)
-- **IPv4**: `172.53.53.53/32`
+- **IPv4**: Each address in `services.dnsVip.ipv4Addresses`, assigned as a `/32`: `172.53.53.53/32` and `10.254.253.53/32`
 - **IPv6 (local only)**: `fd74:f571:d3bd:53::53/128`
 - Configured on dummy interface `dnsvip` on all three nodes
-- The IPv4 VIP is advertised via BIRD/BGP when the node is healthy; the IPv6 VIP is not advertised.
+- All IPv4 VIPs are advertised and withdrawn together via BIRD/BGP according to node health; the IPv6 VIP is not advertised.
+
+#### Migrate to another IPv4 VIP
+
+The private DNS anycast VIP `10.254.253.53/32` is
+[reserved in NetBox](https://netbox.cbannister.xyz/ipam/ip-addresses/85/)
+within the infrastructure VIP pool `10.254.253.0/24`.
+All three nodes set `services.dnsVip.ipv4Addresses` to serve both addresses:
+
+```nix
+services.dnsVip.ipv4Addresses = [
+  "172.53.53.53"
+  "10.254.253.53"
+];
+```
+
+Configure the same list on all three nodes. Each address is assigned to
+`dnsvip`, listens on UDP and TCP port 53, and is advertised through BGP.
+After deploying, verify that the upstream router accepts each `/32` and query
+each VIP with `dig @<vip> gateway.cbannister.casa +short` and
+`dig +tcp @<vip> gateway.cbannister.casa +short`. Both queries must return
+`10.254.254.1`.
+
+Update client DNS settings and any address-specific firewall rules before
+removing the old address from the list. The fabric forwarding rule in
+`systems/trusted-backup/routing.nix` already permits the private VIP through
+its `10.0.0.0/8` destination range. Removing an address removes its interface
+assignment, DNS listener, and BGP announcement after deployment.
 
 ### 2. DNS Nodes
 - **dns1**: `10.254.53.0/31` (Brocade peer: `10.254.53.1`)
@@ -32,7 +59,7 @@ DNSdist (Load Balancer & Router)
 - Each DNS NIC uses its own `/31` point-to-point link carved from `10.254.53.0/24` for direct eBGP peering.
 
 ### 3. DNSdist (Frontend Load Balancer)
-- Listens on VIP address (`172.53.53.53:53`)
+- Listens on every configured IPv4 VIP on UDP and TCP port 53, plus the local IPv6 VIP
 - Health check listener: `127.0.0.1:5380` (for node health monitoring)
 - Routes queries based on source IP and domain patterns
 - Provides caching, metrics (Prometheus on port 5383)
@@ -63,12 +90,12 @@ DNSdist performs "lazy" health checks on backends:
    - Default → Cloudflare
 
 ### 4. BIRD (BGP Routing)
-- Manages dynamic routing advertisement of VIP
-- The health check controls the `dnsvip_direct` IPv4 route.
-- The IPv4 VIP is exported through BGP; IPv6 is not advertised.
+- Manages dynamic routing advertisement of VIPs
+- The health check controls all IPv4 VIP routes through `dnsvip_direct`.
+- Every configured IPv4 VIP is exported through BGP; IPv6 is not advertised.
 - BGP uses local AS `65110` and peers with the directly connected upstream gateway in AS `65001`.
-- When enabled: the direct VIP route becomes available to BGP for export.
-- When disabled: BGP withdraws the VIP announcement.
+- When enabled: the direct VIP routes become available to BGP for export.
+- When disabled: BGP withdraws all VIP announcements.
 - Provides automatic failover between nodes
 - Each node uses a dedicated point-to-point link toward the Brocade ICX7250.
 
@@ -94,7 +121,7 @@ interface ve 3101
 Key points:
 - Use one VLAN/VE per DNS node so each link is isolated.
 - Set the Proxmox port to **untagged** in that VLAN; other VLANs continue to be trunked on different switch ports.
-- In the upstream BGP configuration (local AS `65001`), configure an eBGP neighbor for each DNS node using remote AS `65110`; verify that the switch learns `172.53.53.53/32` from all healthy nodes.
+- In the upstream BGP configuration (local AS `65001`), configure an eBGP neighbor for each DNS node using remote AS `65110`; verify that the switch learns every configured IPv4 VIP as a `/32` from all healthy nodes.
 
 ### 5. Backend Services
 
@@ -225,6 +252,19 @@ Kubernetes authoritative zones are configured once in
 `services.dnsVip.kubernetesDomains` in `roles/dnsVip/default.nix`. DNSdist
 routes every listed zone to the shared Kubernetes backend and uses the first
 zone for its backend health check.
+
+## VM test
+
+Run the DNS VIP integration test with:
+
+```bash
+nix build .#checks.x86_64-linux.dns-vip
+```
+
+The test boots a DNS node and a BGP peer/client. It checks UDP and TCP queries,
+adding a second VIP, health-based withdrawal and recovery of both routes,
+listener restart, removal of the old VIP, and repeated configuration activation.
+Blocky uses a local test denylist so the test needs no external DNS services.
 
 ## Monitoring
 

@@ -1,5 +1,4 @@
--- udp/tcp dns listening
--- Note: NixOS service configures primary listening address (172.53.53.53:53)
+-- IPv4 UDP/TCP listeners are configured by the NixOS service.
 
 -- Health check listener on localhost - used by healthcheck service to verify dnsdist
 -- functionality without depending on VIP state (port 5380 to avoid mDNS conflict on 5353)

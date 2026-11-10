@@ -226,6 +226,11 @@
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") (
           deploy-rs.lib.x86_64-linux.deployChecks self.deploy
+          // {
+            dns-vip = import ./tests/dns-vip.nix {
+              pkgs = import nixpkgs { inherit system; };
+            };
+          }
         )
       );
     };
