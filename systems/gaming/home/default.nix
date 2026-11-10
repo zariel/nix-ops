@@ -1,6 +1,7 @@
 {
   pkgs,
   codex-cli-nix,
+  janestreet-agent-skills,
   llm-agents,
   config,
   lib,
@@ -88,6 +89,7 @@ in
     package = codex-cli-nix.packages.${pkgs.stdenv.hostPlatform.system}.default;
     skills = {
       draft-commit = ./apps/codex/skills/draft-commit.md;
+      socratic-tutor = "${janestreet-agent-skills}/socratic-tutor";
       technical-doc-writer = ./apps/codex/skills/technical-doc-writer;
     };
     context = builtins.readFile ./apps/codex/context.md;

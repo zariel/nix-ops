@@ -27,6 +27,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    janestreet-agent-skills = {
+      url = "github:janestreet/agent_skills";
+      flake = false;
+    };
+
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -57,6 +62,7 @@
       disko,
       llm-agents,
       codex-cli-nix,
+      janestreet-agent-skills,
       treefmt-nix,
       catppuccin,
       sops-nix,
@@ -125,7 +131,7 @@
             ];
           };
           extraSpecialArgs = {
-            inherit codex-cli-nix llm-agents;
+            inherit codex-cli-nix llm-agents janestreet-agent-skills;
           };
         };
       };
