@@ -612,7 +612,7 @@ in
     sandbox_workspace_write = {
       network_access = true;
       writable_roots = [
-        "/home/chris/.cache/go-build"
+        config.home-manager.users.chris.xdg.cacheHome
       ];
     };
     model_reasoning_effort = "high";
