@@ -1,3 +1,8 @@
+# Tooling
+
+- Use `nix run`, `nix shell`, or `nix develop` to access required tooling that is not already available.
+- Prefer the repository's development shell when provided; otherwise use packages from `nixpkgs` for ad hoc tooling.
+
 # Version Control
 
 - If a repository contains `.jj`, use `jj` instead of `git` for version-control operations.
