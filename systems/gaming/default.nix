@@ -621,6 +621,10 @@ in
     personality = "pragmatic";
     approvals_reviewer = "auto_review";
 
+    mcp_servers.playwright = {
+      command = lib.getExe pkgs.playwright-mcp;
+    };
+
     features = {
       multi_agent = true;
       apps = false;
