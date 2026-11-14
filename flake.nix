@@ -248,6 +248,10 @@
               pkgs = import nixpkgs { inherit system; };
               sopsModule = sops-nix.nixosModules.sops;
             };
+            gateway-hardening = import ./tests/gateway-hardening.nix {
+              pkgs = import nixpkgs { inherit system; };
+              sopsModule = sops-nix.nixosModules.sops;
+            };
             gateway-firewall = import ./tests/gateway-firewall.nix {
               pkgs = import nixpkgs { inherit system; };
             };

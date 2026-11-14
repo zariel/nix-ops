@@ -2,6 +2,17 @@
 let
   command = "${pkgs.python3}/bin/python3 ${./spamhaus-drop.py} ${./spamhaus-drop.nft}";
   stateDirectory = "spamhaus-drop";
+  sandbox = (import ./sandbox.nix) // {
+    CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
+    RestrictAddressFamilies = [
+      "AF_UNIX"
+      "AF_INET"
+      "AF_INET6"
+      "AF_NETLINK"
+    ];
+    MemoryMax = "256M";
+    TasksMax = 64;
+  };
 in
 {
   assertions = [
@@ -27,7 +38,7 @@ in
     unitConfig.DefaultDependencies = false;
     reloadIfChanged = true;
     path = [ pkgs.nftables ];
-    serviceConfig = {
+    serviceConfig = sandbox // {
       Type = "oneshot";
       RemainAfterExit = true;
       ExecStart = "${command} restore";
@@ -49,7 +60,7 @@ in
     ];
     environment.SPAMHAUS_URL_BASE = "https://www.spamhaus.org/drop";
     path = [ pkgs.nftables ];
-    serviceConfig = {
+    serviceConfig = sandbox // {
       Type = "oneshot";
       ExecStart = "${command} update";
       StateDirectory = stateDirectory;

@@ -22,7 +22,6 @@ let
     iot = [ "bond0.40" ];
     thread = [ "bond0.1100" ];
     matter = [ "bond0.1101" ];
-    containers = [ "ve-*" ];
     transit = [ "bond0.3001" ];
   };
   internal = lib.filter (zone: zone != "wan") (builtins.attrNames zones) ++ [ "local" ];
@@ -186,14 +185,15 @@ in
 
   # Omitted zone pairs are denied. Rules within a pair are evaluated in order.
   ipv4 = {
-    guest.to.containers = [
-      dns
-    ];
     guest.to.local = [ dhcp ];
     guest.to.transit = [ dns4 ];
     guest.to.wan = [ accept ];
-    iot.to.containers = [ accept ];
     iot.to.local = [
+      (tcp {
+        daddr = "10.5.0.8";
+        dport = 80;
+        comment = "PXE boot assets";
+      })
       mdnsReply
       dhcp
       ntp4
@@ -247,8 +247,12 @@ in
       blockDot
       accept
     ];
-    lan.to.containers = [ accept ];
     lan.to.local = [
+      (tcp {
+        daddr = "10.5.0.8";
+        dport = 80;
+        comment = "PXE boot assets";
+      })
       {
         l4proto = "icmp";
         saddr = "10.1.0.0/24";
@@ -292,7 +296,6 @@ in
       })
     ];
     lan.to.wan = [ accept ];
-    local.to.containers = [ accept ];
     local.to.iot = [
       mdnsReply
       {
@@ -389,7 +392,6 @@ in
         ];
       }
     ];
-    servers.to.containers = [ accept ];
     servers.to.lan = [
       (udp {
         dport = 161;
@@ -397,6 +399,11 @@ in
       })
     ];
     servers.to.local = [
+      (tcp {
+        daddr = "10.5.0.8";
+        dport = 80;
+        comment = "PXE boot assets";
+      })
       dhcp
       ntp4
       (tcp {
@@ -443,25 +450,6 @@ in
       })
     ];
     servers.to.wan = [ accept ];
-    transit.to.containers = [
-      (tcpUdp {
-        daddr = "10.5.0.4";
-        dport = 53;
-        comment = "DNS";
-      })
-      (tcp {
-        daddr = "10.5.0.4";
-        dport = 8083;
-        saddr = setRef "transit_pods";
-        comment = "Application port 8083";
-      })
-      (tcp {
-        daddr = "10.5.0.7";
-        dport = 4000;
-        saddr = setRef "transit_pods";
-        comment = "Application port 4000";
-      })
-    ];
     transit.to.iot = [ icmp4 ];
     transit.to.lan = [
       (tcp {
@@ -598,10 +586,14 @@ in
         comment = "DNS servers";
       }
     ];
-    trusted.to.containers = [ accept ];
     trusted.to.iot = [ accept ];
     trusted.to.lan = [ accept ];
     trusted.to.local = [
+      (tcp {
+        daddr = "10.5.0.8";
+        dport = 80;
+        comment = "PXE boot assets";
+      })
       mdnsReply
       {
         l4proto = 112;
@@ -704,7 +696,6 @@ in
         to = lib.genAttrs (lib.remove source internal) (_: [ icmp6 ]);
       }))
       {
-        iot.to.containers = [ accept ];
         iot.to.local = [
           mdnsReply
           (icmpv6 {
@@ -794,7 +785,6 @@ in
         ]
         ++ icmp6Errors;
         transit.to.local = [ accept ];
-        trusted.to.containers = [ accept ];
         trusted.to.local = [
           mdnsReply
           icmp6

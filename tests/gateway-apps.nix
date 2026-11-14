@@ -1,22 +1,14 @@
 { pkgs, ... }:
 pkgs.testers.runNixOSTest {
   name = "gateway-apps";
-  globalTimeout = 300;
-  nodes.router = { ... }: {
+  globalTimeout = 240;
+  nodes.router = {
     imports = [
+      ../systems/gateway/hardening.nix
       ../systems/gateway/firewall.nix
       ../systems/gateway/apps.nix
     ];
     systemd.network.wait-online.enable = false;
-    containers.matchbox.config.systemd.services.hold-ready = {
-      unitConfig.ConditionPathExists = "!/var/lib/matchbox/network-test-released";
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${pkgs.coreutils}/bin/sleep infinity";
-      };
-    };
-    virtualisation.memorySize = 3072;
     virtualisation.vlans = [ 1 ];
     networking.useDHCP = false;
     networking.interfaces.eth1.ipv4.addresses = [
@@ -31,12 +23,15 @@ pkgs.testers.runNixOSTest {
       config = builtins.readFile ../systems/gateway/frr.conf;
     };
     systemd.tmpfiles.rules = [
-      "d /var/lib/gateway/matchbox/assets 0755 root root -"
       "f /var/lib/gateway/matchbox/assets/probe 0644 root root - gateway-app-probe"
     ];
-    environment.systemPackages = [ pkgs.curl ];
+    environment.systemPackages = [
+      pkgs.curl
+      pkgs.python3
+      pkgs.util-linux
+    ];
   };
-  nodes.fabric = { ... }: {
+  nodes.fabric = {
     virtualisation.vlans = [ 1 ];
     networking.useDHCP = false;
     networking.firewall.enable = false;
@@ -46,7 +41,6 @@ pkgs.testers.runNixOSTest {
         prefixLength = 31;
       }
     ];
-    environment.systemPackages = [ pkgs.curl ];
     services.frr = {
       bgpd.enable = true;
       config = ''
@@ -59,40 +53,47 @@ pkgs.testers.runNixOSTest {
     };
   };
   testScript = ''
-    import json
     start_all()
     router.wait_for_unit("frr.service")
+    router.wait_for_unit("matchbox.service")
     fabric.wait_for_unit("frr.service")
     router.succeed("ip link set eth1 name bond0.3001")
-    # Networking must work while the container is still initializing.
     fabric.wait_until_succeeds("ip route show 10.5.0.8/32 | grep 'via 10.254.0.0'")
-    router.succeed("systemctl show container@matchbox.service -p ActiveState --value | grep -x activating")
-    router.succeed("touch /var/lib/gateway/matchbox/network-test-released")
-    router.succeed("nixos-container run matchbox -- systemctl stop hold-ready")
-    router.wait_for_unit("container@matchbox.service")
+    router.succeed("ip -4 address show lo | grep '10.5.0.8/32'")
     router.wait_until_succeeds("curl -fsS --max-time 2 http://10.5.0.8/assets/probe | grep gateway-app-probe")
-    router.succeed("ip route show 10.5.0.8/32 | grep 'dev ve-matchbox'")
-    router.fail("ip -4 address show | grep 'inet 10.5.0.8/'")
-    fabric.wait_until_succeeds("ip route show 10.5.0.8/32 | grep 'via 10.254.0.0'")
-    routes = json.loads(fabric.succeed("vtysh -c 'show bgp ipv4 unicast json'"))["routes"]
-    assert "10.5.0.8/32" in routes
-    assert "10.5.0.10/32" not in routes
-    assert "10.5.0.11/32" not in routes
-    assert "10.5.0.0/24" not in routes
+    router.fail("systemctl list-units --all --no-legend | grep container@")
 
-    # Export only service /32 routes, not unrelated kernel routes or subnets.
-    router.succeed("ip route add 198.18.0.8/32 dev ve-matchbox; ip route add 10.5.0.128/25 dev ve-matchbox; ip route add 10.5.0.9/32 dev ve-matchbox")
-    router.succeed("systemctl reload frr")
-    fabric.wait_until_succeeds("ip route show 10.5.0.9/32 | grep 'via 10.254.0.0'")
-    routes = json.loads(fabric.succeed("vtysh -c 'show bgp ipv4 unicast json'"))["routes"]
-    assert "198.18.0.8/32" not in routes
-    assert "10.5.0.128/25" not in routes
+    for zone, interface, gateway_address, address in (
+        ("trusted", "bond0.20", "10.1.2.1", "10.1.2.11"),
+        ("servers", "bond0.10", "10.1.1.1", "10.1.1.31"),
+        ("iot", "bond0.40", "10.1.3.1", "10.1.3.14"),
+        ("lan", "bond0.100", "10.1.0.1", "10.1.0.22"),
+        ("guest", "bond0.30", "192.168.2.1", "192.168.2.11"),
+        ("wan", "wan0", "198.18.0.1", "198.18.0.2"),
+    ):
+        router.succeed(f"ip netns add {zone}; ip link add {interface} type veth peer name peer; ip link set peer netns {zone}; ip link set {interface} up")
+        router.succeed(f"ip addr add {gateway_address}/24 dev {interface}; ip -n {zone} link set lo up; ip -n {zone} link set peer up; ip -n {zone} addr add {address}/24 dev peer; ip -n {zone} route add default via {gateway_address}")
+        command = f"ip netns exec {zone} curl -fsS --max-time 2 http://10.5.0.8/assets/probe"
+        (router.fail if zone in ("guest", "wan") else router.succeed)(command)
 
-    router.succeed("systemctl stop container@matchbox.service")
-    router.fail("ip link show ve-matchbox")
+    # Even a process using the service identity cannot originate a WAN session.
+    router.succeed("ip route replace default via 198.18.0.2")
+    router.succeed("ip netns exec wan python -m http.server 443 --bind 198.18.0.2 >/tmp/wan.log 2>&1 &")
+    router.wait_until_succeeds("curl -fsS --max-time 2 http://198.18.0.2:443")
+    router.fail("runuser -u matchbox -- curl -fsS --max-time 2 http://198.18.0.2:443")
+    pid = router.succeed("systemctl show matchbox -p MainPID --value").strip()
+    router.fail(f"nsenter -t {pid} -m -- touch /var/lib/matchbox/forbidden")
+
+    # Address ownership outlives a process restart; withdrawing the address
+    # withdraws the BGP route through the same native connected-route primitive.
+    router.succeed("systemctl stop matchbox")
+    fabric.succeed("ip route show 10.5.0.8/32 | grep 'via 10.254.0.0'")
+    router.succeed("systemctl start matchbox")
+    router.wait_until_succeeds("curl -fsS --max-time 2 http://10.5.0.8/assets/probe | grep gateway-app-probe")
+    router.succeed("ip addr del 10.5.0.8/32 dev lo")
     fabric.wait_until_fails("ip route show 10.5.0.8/32 | grep 'via 10.254.0.0'")
-    router.succeed("systemctl start container@matchbox.service")
-    router.wait_until_succeeds("curl -fsS --max-time 2 http://10.5.0.8/assets/probe | grep gateway-app-probe")
+    router.succeed("networkctl reconfigure lo")
     fabric.wait_until_succeeds("ip route show 10.5.0.8/32 | grep 'via 10.254.0.0'")
+    router.wait_until_succeeds("curl -fsS --max-time 2 http://10.5.0.8/assets/probe | grep gateway-app-probe")
   '';
 }

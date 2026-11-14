@@ -178,6 +178,7 @@ in
           IPv6AcceptRA = ipv6WanEnabled;
         };
         dhcpV4Config = {
+          UseHostname = false;
           UseDNS = false;
           UseNTP = false;
           ClientIdentifier = "mac";

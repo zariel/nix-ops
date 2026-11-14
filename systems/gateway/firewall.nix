@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ config, lib, ... }:
 let
   policy = import ./firewall-policy.nix { inherit lib; };
   inherit (policy) zones;
@@ -85,8 +85,21 @@ in
     }
   ];
   boot.kernelModules = [ "nf_conntrack_tftp" ];
+  systemd.services.nftables.serviceConfig = (import ./sandbox.nix) // {
+    CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
+    RestrictAddressFamilies = [
+      "AF_UNIX"
+      "AF_NETLINK"
+    ];
+    MemoryMax = "256M";
+    TasksMax = 64;
+  };
   networking.firewall.enable = false;
   networking.nftables = {
+    # The build sandbox has no host user database; runtime resolves the service UID.
+    preCheckRuleset = lib.optionalString (config.users.users ? matchbox) ''
+      sed -i 's/skuid "matchbox"/skuid 0/g' ruleset.conf
+    '';
     enable = true;
     flushRuleset = false;
     tables.gateway = {
@@ -131,6 +144,11 @@ in
           }
           chain output {
             type filter hook output priority filter; policy drop;
+            ${lib.optionalString (config.users.users ? matchbox) ''
+              # Matchbox serves inbound requests and may only send tracked replies.
+              meta skuid "matchbox" ct state established,related accept
+              meta skuid "matchbox" counter drop
+            ''}
             oifname "lo" accept
             ct state invalid drop
             ct state established,related accept

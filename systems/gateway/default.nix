@@ -1,6 +1,7 @@
 { ... }:
 {
   imports = [
+    ./hardening.nix
     ./hardware.nix
     ./network.nix
     ./high-availability.nix

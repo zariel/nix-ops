@@ -32,10 +32,17 @@
       allow 192.168.0.0/16
     '';
   };
+  services.journald.settings.Journal.ForwardToSyslog = false;
   services.rsyslogd = {
     enable = true;
+    extraParams = [
+      "-i"
+      "/run/rsyslog/rsyslogd.pid"
+    ];
     defaultConfig = ""; # journald remains the local log store
     extraConfig = ''
+      $WorkDirectory /var/lib/rsyslog
+      module(load="imjournal" StateFile="/var/lib/rsyslog/imjournal.state")
       kern.warning action(type="omfwd" target="10.45.0.2" port="6001"
         protocol="tcp" TCP_Framing="octet-counted" template="RSYSLOG_SyslogProtocol23Format"
         action.resumeRetryCount="-1" queue.type="LinkedList" queue.size="10000")

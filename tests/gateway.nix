@@ -1,11 +1,12 @@
 { pkgs, sopsModule, ... }:
 pkgs.testers.runNixOSTest {
   name = "gateway-policy";
-  globalTimeout = 240;
+  globalTimeout = 360;
   nodes.router = { lib, ... }: {
     imports = [
       sopsModule
       ./dhcp-dns-secret.nix
+      ../systems/gateway/hardening.nix
       ../systems/gateway/firewall.nix
       ../systems/gateway/dhcp.nix
     ];
@@ -104,7 +105,6 @@ pkgs.testers.runNixOSTest {
     router.succeed("systemctl start kea-dhcp4-server")
     router.wait_for_unit("kea-dhcp4-server.service")
     client("wan", "wan0", "198.18.0.1", "198.18.0.2")
-    client("app", "ve-app", "10.5.0.1", "10.5.0.8")
     router.succeed("ip route add default via 198.18.0.2")
     router.wait_until_succeeds("ip netns exec trusted curl -fsS --max-time 2 http://10.1.3.14:8080")
     router.succeed("ip netns exec trusted curl -fsS --max-time 2 http://10.1.1.31:8080")
@@ -113,17 +113,11 @@ pkgs.testers.runNixOSTest {
     router.fail("ip netns exec wan curl -fsS --max-time 2 http://10.1.1.31:8080")
     router.succeed("ip netns exec guest curl -fsS --max-time 2 http://198.18.0.2:8080")
 
-    for zone in ("trusted", "iot", "servers"):
-        router.wait_until_succeeds(f"ip netns exec {zone} curl -fsS --max-time 2 http://10.5.0.8:8080")
-    for zone in ("guest", "wan"):
-        router.fail(f"ip netns exec {zone} curl -fsS --max-time 2 http://10.5.0.8:8080")
-
     # Exercise DNS migration, outbound restrictions, and inbound DNAT.
     client("transit", "bond0.3001", "10.254.0.0", "10.254.0.1")
     router.succeed("ip netns exec transit ip addr add 172.53.53.53/32 dev lo; ip route add 172.53.53.53/32 via 10.254.0.1")
     router.succeed("mkdir -p /tmp/dns-legacy /tmp/dns-preferred; echo legacy > /tmp/dns-legacy/identity; echo preferred > /tmp/dns-preferred/identity")
     router.succeed("ip netns exec transit python -m http.server 53 --bind 172.53.53.53 --directory /tmp/dns-legacy >/tmp/dns.log 2>&1 &")
-    router.fail("ip netns exec app curl -fsS --max-time 2 http://172.53.53.53:53/identity | grep -x legacy")
     router.succeed("ip netns exec transit ip addr add 10.254.253.53/32 dev lo; ip route add 10.254.253.53/32 via 10.254.0.1")
     router.succeed("ip netns exec transit python -m http.server 53 --bind 10.254.253.53 --directory /tmp/dns-preferred >/tmp/dns-new.log 2>&1 &")
     for zone in ("trusted", "iot", "guest", "servers", "lan"):
@@ -131,8 +125,6 @@ pkgs.testers.runNixOSTest {
         router.succeed(f"ip netns exec {zone} curl -fsS --max-time 2 http://172.53.53.53:53/identity | grep -x legacy")
     for zone in ("trusted", "iot"):
         router.succeed(f"ip netns exec {zone} curl -fsS --max-time 2 http://1.1.1.1:53/identity | grep -x preferred")
-    router.fail("ip netns exec app curl -fsS --max-time 2 http://10.1.1.31:8080")
-    router.fail("ip netns exec app curl -fsS --max-time 2 http://198.18.0.2:8080")
     router.fail("curl -fsS --max-time 2 http://198.18.0.2:8080")
     router.succeed("ip netns exec wan python -m http.server 443 --bind 198.18.0.2 >/tmp/wan-https.log 2>&1 &")
     router.wait_until_succeeds("curl -fsS --max-time 2 http://198.18.0.2:443")
@@ -178,7 +170,6 @@ pkgs.testers.runNixOSTest {
         ("iot", "bond0.40", "fd00:40"),
         ("guest", "bond0.30", "fd00:30"),
         ("servers", "bond0.10", "fd00:10"),
-        ("app", "ve-app", "fd00:5"),
         ("transit", "bond0.3001", "fd00:3001"),
         ("wan", "wan0", "2001:db8:ffff"),
     ):
@@ -187,9 +178,6 @@ pkgs.testers.runNixOSTest {
         router.succeed(f"ip netns exec {zone} ip -6 route add default via {prefix}::1")
         router.succeed(f"ip netns exec {zone} python -m http.server 8081 --bind :: >/tmp/{zone}-ipv6.log 2>&1 &")
 
-    router.wait_until_succeeds("ip netns exec trusted curl -gfsS --max-time 2 http://[fd00:5::2]:8081")
-    router.succeed("ip netns exec iot curl -gfsS --max-time 2 http://[fd00:5::2]:8081")
-    router.fail("ip netns exec servers curl -gfsS --max-time 2 http://[fd00:5::2]:8081")
     router.fail("ip netns exec trusted curl -gfsS --max-time 2 http://[fd00:10::2]:8081")
     router.fail("ip netns exec guest curl -gfsS --max-time 2 http://[fd00:20::2]:8081")
     router.succeed("ip netns exec guest ping -6 -c 1 -W 2 fd00:20::2")

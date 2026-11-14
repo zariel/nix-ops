@@ -37,6 +37,7 @@ pkgs.testers.runNixOSTest {
         sopsModule
         ./dhcp-dns-secret.nix
         ../systems/gateway/dhcp.nix
+        ../systems/gateway/hardening.nix
         ../systems/gateway/firewall.nix
       ];
       networking.useDHCP = false;

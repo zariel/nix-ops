@@ -18,10 +18,8 @@ primary on the shared network; they must not run with the same node address.
 ## Ownership and maintenance
 
 - systemd-networkd owns physical links, the LACP bond, VLANs, WireGuard, WAN DHCP,
-  IPv6 advertisements, and container veth addressing/routes on both sides of
-  each link. Native NixOS containers use systemd-nspawn to own their private
-  namespaces and veth lifetime. Networkd configures links as they appear,
-  independently of application readiness.
+  IPv6 advertisements, and the Matchbox service address on loopback.
+  Networkd configures links independently of application readiness.
 - FRR owns BGP, PIM/IGMP/MLD and the static reject route. Networkd learns the Thread
   OMR route from OTBR and leaves foreign routes, nexthops and policy rules alone. There is no OSPF in
   the live configuration, so none is enabled here.
@@ -35,22 +33,16 @@ primary on the shared network; they must not run with the same node address.
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
   All 59 live reservations are included, including MACs used in different VLANs
   and `bc250-lounge`, which is absent from the VyOS repository scripts.
-- Chrony, Avahi, node-exporter and FRR run as native systemd services. Matchbox
-  0.11.0 runs as a native service in a NixOS container.
-  UniFi OS Server runs separately on pve2 VM 203 at `10.1.0.23`;
-  the NixOS gateway does not run a UniFi controller.
-- FRR exports kernel `/32` routes in `10.5.0.0/24` through the existing ICX peer.
-  Networkd installs each route when its veth comes up; container shutdown removes
-  the interface/route and withdraws the BGP advertisement. Application addresses
-  are defined once in `apps.nix`; adding an application in this pool needs no BGP
-  network statement. A failed application
-  process does not withdraw its route while the container stays running.
-- Application units wait for `network-online.target`. Native systemd directory
-  management owns service state/runtime/log directories.
-- nftables classifies `ve-*` interfaces as the container zone, preserving packet
-  policy through the routed namespaces. Matchbox cannot initiate connections
-  to the router, servers, transit or WAN; established replies remain permitted. Podman
-  networking and the shared application bridge are removed.
+- Chrony, Avahi, node-exporter, FRR and Matchbox 0.11.0 run as native systemd
+  services. There are no application containers on this gateway. UniFi OS Server
+  runs separately on pve2 VM 203 at `10.1.0.23`.
+- Networkd owns Matchbox's loopback address `10.5.0.8/32`. FRR originates this
+  exact prefix through the ICX while the address exists. Restarting Matchbox
+  does not change routing; removing the address withdraws its advertisement.
+- Matchbox serves only `10.5.0.8:80`, as the unprivileged `matchbox` user.
+  Its private mount namespace exposes the boot data read-only. The firewall
+  allows HTTP from trusted, servers, management and IoT, and permits only
+  tracked replies from the service identity. Guest and WAN requests are denied.
 
 Kea is configured through `services.kea.dhcp4.settings`; NixOS generates its
 JSON configuration and manages the service and state directory. Reservations
@@ -59,6 +51,81 @@ UniFi discovery options. No SQL database or HTTP control API is enabled.
 `services.atftpd` serves the boot assets from `/var/lib/tftpboot`.
 Kea waits for its five LAN interfaces through networkd's per-interface readiness
 units; it does not wait for the WAN or unused ports.
+
+## Service isolation and resource limits
+
+`systems/gateway/hardening.nix` supplements the pinned NixOS and systemd unit
+defaults. `sandbox.nix` defines the common restrictions for gateway-owned units:
+no privilege escalation, read-only system files, private temporary files and
+devices, blocked namespace creation, syscall filtering and native-only syscall
+architecture. Network daemons cannot access host management sockets or raw SOPS
+secrets. Each unit receives only its required address families and capabilities.
+Systemd delivers BIND and D2 credentials separately.
+
+| Service | Required access and exceptions | Hard memory limit |
+| --- | --- | --- |
+| FRR | Network administration, raw sockets and privilege dropping; writes `/run/frr` and managed persistent PIM state in `/var/lib/frr`. The pinned Zebra binary requests `CAP_SYS_ADMIN`, while mount and namespace operations remain blocked. | 1 GiB |
+| Keepalived | VRRP network administration and raw sockets. The native module's PID files require writable `/run`. | 256 MiB |
+| Kea DHCPv4 | IPv4 packet sockets and its managed lease/runtime directories. | 512 MiB |
+| Kea D2 | No capabilities; IP traffic restricted to localhost. | 256 MiB |
+| BIND | Existing upstream sandbox; IP traffic restricted to localhost and the three DNS replicas. | 1 GiB |
+| TFTP | Dynamic unprivileged user, privileged-port binding, read-only boot files. Upload requests are rejected. | 128 MiB |
+| Syslog forwarding | Dynamic unprivileged user; reads the journal with a persistent cursor, writes managed state/runtime directories and connects only to `10.45.0.2`. | 256 MiB |
+| Matchbox | Dedicated unprivileged user; binds only IPv4 TCP 80 and reads boot assets. | 256 MiB |
+| Chrony | Retains clock adjustment; no direct hardware clock devices. | 128 MiB |
+| Avahi | Existing upstream sandbox; only configured reflector interfaces. | 128 MiB |
+| Node exporter | Existing upstream sandbox and no capabilities. Read-only timex syscalls remain available for metrics. | 512 MiB |
+| D-Bus broker / NSS cache | Local IPC and identity lookup, with capability/syscall restrictions. | 256 / 128 MiB |
+| SSH | Retains host filesystem access and privilege transitions for sudo and deployment. | 1 GiB |
+| Nix daemon | Retains build namespaces and privilege transitions; only root and chris may submit requests. | 2 GiB |
+
+Soft memory thresholds precede the hard limits. A process exceeding its hard
+limit can be killed; restart policies recover network daemons after failures.
+These limits leave headroom for the configured home network, and must be reviewed
+if route counts, lease counts or enabled workloads grow substantially. Routing
+services have no CPU quota. Matchbox is limited to one CPU, and Nix builds use
+one job/one core with lower CPU and I/O weights.
+
+Other boot and hardware services retain their upstream unit restrictions. The
+manager defaults to 512 tasks per unit and disables core dumps; units can retain
+explicit limits where their function requires them. Coredump storage and processing
+are disabled, and journald storage is bounded to 256 MiB on disk and 64 MiB at
+runtime. SSH, Nix, activation and secret installation remain privileged host
+administration boundaries. These restrictions reduce the impact of a compromised
+service; they do not isolate the host kernel from its routing daemons.
+
+The `gateway-hardening` VM check boots the complete production service set with
+test hardware and credentials. It exercises WAN DHCP, client leases, TFTP reads
+and denied writes, live syslog forwarding, SSH/sudo, sandboxed Nix builds, service
+recovery and asset uploads. Process identities, mount restrictions and cgroup
+limits are observed through the kernel. The other gateway checks cover BGP,
+VRRP, DNS replication, packet filtering and feed-update failure recovery.
+
+### Upload Matchbox assets
+
+The `chris` account belongs to `matchbox-assets`. Upload files to the writable
+host directory; the running service sees the same files through a read-only
+mount at `/var/lib/matchbox`:
+
+```sh
+scp new-image.img chris@10.1.2.5:/var/lib/gateway/matchbox/assets/
+curl http://10.5.0.8/assets/new-image.img
+```
+
+No service restart is needed. Keep uploaded files readable by the service, for
+example mode `0644`. During the initial data import, run these commands as root so existing files can
+also be replaced over SFTP:
+
+```sh
+chgrp -R matchbox-assets /var/lib/gateway/matchbox/assets
+chmod -R g+rwX /var/lib/gateway/matchbox/assets
+```
+
+The service user is not a member of the upload group.
+
+References: [systemd execution restrictions](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html),
+[systemd resource controls](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html),
+[FRR Zebra capability requirements](https://github.com/FRRouting/frr/blob/frr-10.7.1/zebra/main.c).
 
 ## DHCP DNS
 
@@ -178,7 +245,7 @@ traffic, DHCP/RA exceptions and traffic within a zone are handled before the
 zone-pair rules. The GeoIP snapshot remains separate in `geoip-cn-ru.nft`.
 
 Validate changes with the rule rendering check and both gateway VM checks shown below. They exercise
-IPv4/IPv6 isolation, service exceptions, DHCP, TFTP, NAT, container traffic and
+IPv4/IPv6 isolation, service exceptions, DHCP, TFTP, NAT, native application traffic and
 firewall reloads. Inspect the applied policy with `nft list table inet gateway`;
 rule comments identify services and purposes.
 
@@ -296,8 +363,8 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   Trusted and IoT WAN policy blocks TCP and UDP port 853 for both families.
   The management NTP redirect matches
   `bond0.100`, correcting the old `bond0` match.
-- The zone policies retain permissive rules such as IPv6 transit-to-router and
-  IoT-to-containers. This migration does not silently tighten those rules.
+- IPv6 transit-to-router remains permissive. The obsolete container zone and
+  its permissions for retired gateway applications are removed.
   Kernel warnings are forwarded to the existing TCP syslog collector through rsyslog.
   Drop counters replace VyOS's per-rule logging; inspect `nft list table inet gateway`.
 - WAN router egress allows DHCP, resolver DNS, NTP, HTTPS, WireGuard and selected
@@ -320,14 +387,11 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   and iPXE clients get `http://10.5.0.8/boot.ipxe` on the servers subnet.
 - Matchbox retains `10.5.0.8`, preserving DHCP/PXE references. UniFi discovery
   through DHCP and DNS points to the separate server at `10.1.0.23`.
-- For an existing NixOS Podman deployment, stop all three `podman-*` application
-  units before switching. After the switch, remove the unused `gateway-apps`
-  Podman network and delete `pod-containers` during maintenance. Networkd does
-  not delete removed netdevs. On the ICX, verify the application `/32` routes
-  replace `10.5.0.0/24`, including withdrawal/recovery when stopping/starting a
-  container. Use `systemctl status container@matchbox` and
-  `nixos-container run matchbox -- systemctl status matchbox` to inspect both
-  lifecycle layers.
+- Before switching an existing NixOS application-container deployment, stop
+  `container@matchbox` and any legacy `podman-*` application units. The native
+  service uses the same host data path. Remove unused container/Podman netdevs
+  during maintenance; networkd does not delete removed netdevs. Verify the exact
+  `10.5.0.8/32` route on the ICX and inspect `systemctl status matchbox`.
 
 ## Installation and state transfer
 
@@ -458,5 +522,4 @@ The NixOS gateway has no UniFi application or route for `10.5.0.10`.
 
 References: [networkctl reload](https://www.freedesktop.org/software/systemd/man/latest/networkctl.html),
 [netdev lifecycle](https://www.freedesktop.org/software/systemd/man/latest/systemd.netdev.html),
-[Kea DHCPv4 configuration](https://kea.readthedocs.io/en/kea-3.2.1/arm/dhcp4-srv.html),
-[NixOS containers](https://nixos.org/manual/nixos/stable/#ch-containers).
+[Kea DHCPv4 configuration](https://kea.readthedocs.io/en/kea-3.2.1/arm/dhcp4-srv.html).

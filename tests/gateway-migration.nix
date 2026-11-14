@@ -8,6 +8,7 @@ pkgs.testers.runNixOSTest {
         ../systems/gateway/network.nix
         ../systems/gateway/high-availability.nix
         ../systems/gateway/services.nix
+        ../systems/gateway/hardening.nix
         ../systems/gateway/firewall.nix
       ];
       services.prometheus.exporters.node.enable = true;

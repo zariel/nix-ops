@@ -23,7 +23,14 @@ in
       "sys-subsystem-net-devices-ifb0.device"
     ];
     reloadIfChanged = true;
-    serviceConfig = {
+    serviceConfig = (import ./sandbox.nix) // {
+      CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
+      RestrictAddressFamilies = [
+        "AF_UNIX"
+        "AF_NETLINK"
+      ];
+      MemoryMax = "128M";
+      TasksMax = 32;
       Type = "oneshot";
       RemainAfterExit = true;
       ExecStart = apply;
