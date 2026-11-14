@@ -625,6 +625,10 @@ in
       command = lib.getExe pkgs.playwright-mcp;
     };
 
+    mcp_servers.home-assistant = {
+      url = "https://home-assistant-mcp.cbannister.xyz/mcp";
+    };
+
     features = {
       multi_agent = true;
       apps = false;
