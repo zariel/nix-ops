@@ -621,10 +621,13 @@ in
     personality = "pragmatic";
     approvals_reviewer = "auto_review";
 
-    features.multi_agent = true;
-    features.apps = false;
-    # Clients attach to the systemd service without installing a separate daemon package.
-    features.daemon_auto_start = false;
+    features = {
+      multi_agent = true;
+      apps = false;
+      # Clients attach to the systemd service without installing a separate daemon package.
+      daemon_auto_start = false;
+      memories = true;
+    };
     tui.whimsy = false;
   };
 
