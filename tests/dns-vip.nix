@@ -24,6 +24,7 @@ pkgs.testers.runNixOSTest {
 
         services.dnsVip = {
           enable = true;
+          ipv4Addresses = [ "192.0.2.53" ];
           nodeIp = "10.254.53.0";
           bgpPeerIp = "10.254.53.1";
         };
@@ -48,10 +49,10 @@ pkgs.testers.runNixOSTest {
 
         specialisation = {
           overlap.configuration.services.dnsVip.ipv4Addresses = lib.mkForce [
-            "172.53.53.53"
-            "10.254.253.53"
+            "192.0.2.53"
+            "198.51.100.53"
           ];
-          replacement.configuration.services.dnsVip.ipv4Addresses = lib.mkForce [ "10.254.253.53" ];
+          replacement.configuration.services.dnsVip.ipv4Addresses = lib.mkForce [ "198.51.100.53" ];
         };
       };
 
@@ -100,37 +101,37 @@ pkgs.testers.runNixOSTest {
         for tcp in [False, True]:
             client.wait_until_succeeds(f"test \"$({query(address, tcp)})\" = 10.254.254.1")
 
-    with subtest("Default VIP remains usable"):
-        check_vip("172.53.53.53")
+    with subtest("Initial VIP remains usable"):
+        check_vip("192.0.2.53")
 
     with subtest("Adding a VIP serves both addresses"):
         dns.succeed(f"{booted_system}/specialisation/overlap/bin/switch-to-configuration test")
-        check_vip("172.53.53.53")
-        check_vip("10.254.253.53")
+        check_vip("192.0.2.53")
+        check_vip("198.51.100.53")
 
     with subtest("Node failure withdraws every VIP and recovery restores them"):
         dns.succeed("systemctl stop bind.service")
-        for address in ["172.53.53.53", "10.254.253.53"]:
+        for address in ["192.0.2.53", "198.51.100.53"]:
             client.wait_until_succeeds(f"test -z \"$(ip -4 route show {address}/32)\"")
         dns.succeed("systemctl start bind.service dnsdist.service")
-        check_vip("172.53.53.53")
-        check_vip("10.254.253.53")
+        check_vip("192.0.2.53")
+        check_vip("198.51.100.53")
 
     with subtest("Restarting the frontend preserves both listeners"):
         dns.succeed("systemctl restart dnsdist.service")
-        check_vip("172.53.53.53")
-        check_vip("10.254.253.53")
+        check_vip("192.0.2.53")
+        check_vip("198.51.100.53")
 
     with subtest("Removing the old VIP leaves only the replacement"):
         dns.succeed(f"{booted_system}/specialisation/replacement/bin/switch-to-configuration test")
-        check_vip("10.254.253.53")
-        dns.fail("ip -4 -o address show dev dnsvip | grep -F 'inet 172.53.53.53/32 '")
-        client.wait_until_succeeds('test -z "$(ip -4 route show 172.53.53.53/32)"')
-        dns.fail("ss -H -lntu | grep -F '172.53.53.53:53 '")
+        check_vip("198.51.100.53")
+        dns.fail("ip -4 -o address show dev dnsvip | grep -F 'inet 192.0.2.53/32 '")
+        client.wait_until_succeeds('test -z "$(ip -4 route show 192.0.2.53/32)"')
+        dns.fail("ss -H -lntu | grep -F '192.0.2.53:53 '")
 
     with subtest("Reapplying the replacement configuration is idempotent"):
         dns.succeed(f"{booted_system}/specialisation/replacement/bin/switch-to-configuration test")
-        check_vip("10.254.253.53")
-        client.succeed('test -z "$(ip -4 route show 172.53.53.53/32)"')
+        check_vip("198.51.100.53")
+        client.succeed('test -z "$(ip -4 route show 192.0.2.53/32)"')
   '';
 }

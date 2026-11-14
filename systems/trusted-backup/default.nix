@@ -5,6 +5,9 @@
   modulesPath,
   ...
 }:
+let
+  network = import ../../lib/network.nix;
+in
 {
   # pve VM 108: maintenance access to the IPv4 fabric, without DHCP or NAT.
   # LANs whose only gateway is VyOS still depend on it; IPv6 has no failover.
@@ -15,7 +18,7 @@
 
   networking.hostName = "trusted-backup";
   networking.useDHCP = false;
-  networking.nameservers = [ "172.53.53.53" ];
+  networking.nameservers = [ network.dnsVip ];
   services.resolved.enable = true;
   services.qemuGuest.enable = true;
 

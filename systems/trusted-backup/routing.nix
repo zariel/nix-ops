@@ -1,4 +1,7 @@
 { pkgs, ... }:
+let
+  network = import ../../lib/network.nix;
+in
 {
   boot.kernel.sysctl = {
     "net.ipv4.ip_forward" = 1;
@@ -190,9 +193,9 @@
           ct state established,related accept
           # Maintenance access to the internal fabric, without WAN or NAT.
           iifname "trusted" oifname "transit" ip saddr 10.1.2.0/24 ip daddr { 10.0.0.0/8, 172.20.0.0/16, 172.21.0.0/16 } accept
-          iifname "trusted" oifname "transit" ip saddr 10.1.2.0/24 ip daddr 172.53.53.53 tcp dport 53 accept
-          iifname "trusted" oifname "transit" ip saddr 10.1.2.0/24 ip daddr 172.53.53.53 udp dport 53 accept
-          iifname "trusted" oifname "transit" ip saddr 10.1.2.0/24 ip daddr 172.53.53.53 ip protocol icmp accept
+          iifname "trusted" oifname "transit" ip saddr 10.1.2.0/24 ip daddr { ${network.dnsVip}, ${network.legacyDnsVip} } tcp dport 53 accept
+          iifname "trusted" oifname "transit" ip saddr 10.1.2.0/24 ip daddr { ${network.dnsVip}, ${network.legacyDnsVip} } udp dport 53 accept
+          iifname "trusted" oifname "transit" ip saddr 10.1.2.0/24 ip daddr { ${network.dnsVip}, ${network.legacyDnsVip} } ip protocol icmp accept
         }
       '';
     };

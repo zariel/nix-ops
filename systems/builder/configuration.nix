@@ -4,6 +4,9 @@
   lib,
   ...
 }:
+let
+  network = import ../../lib/network.nix;
+in
 {
   imports = [
     ./hardware-configuration.nix
@@ -17,7 +20,7 @@
       matchConfig.Name = "ens*";
       address = [ "10.1.1.155/24" ];
       gateway = [ "10.1.1.1" ];
-      dns = [ "172.53.53.53" ];
+      dns = [ network.dnsVip ];
     };
   };
 

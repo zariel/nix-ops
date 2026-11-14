@@ -8,6 +8,7 @@
 with lib;
 
 let
+  network = import ../../lib/network.nix;
   cfg = config.services.dnsVip;
 in
 {
@@ -24,10 +25,13 @@ in
 
     ipv4Addresses = mkOption {
       type = types.nonEmptyListOf types.str;
-      default = [ "172.53.53.53" ];
+      default = [
+        network.dnsVip
+        network.legacyDnsVip
+      ];
       example = [
-        "172.53.53.53"
-        "10.254.253.53"
+        "192.0.2.53"
+        "198.51.100.53"
       ];
       description = ''
         IPv4 VIP addresses, without prefix lengths. Each address is assigned

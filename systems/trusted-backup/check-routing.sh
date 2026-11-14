@@ -40,7 +40,7 @@ router id 10.254.0.9;
 protocol device {}
 protocol static fixture {
   ipv4;
-  route 172.53.53.53/32 blackhole;
+  route 192.0.2.53/32 blackhole;
   route 10.1.2.0/24 blackhole;
   route 0.0.0.0/0 blackhole;
 }
@@ -67,7 +67,7 @@ established() { birdc -s "$work/core.sock" show protocols all backup | grep -q '
 advertised() { birdc -s "$work/core.sock" show route protocol backup | grep -q '10.1.2.0/24'; }
 withdrawn() { ! advertised; }
 identity_advertised() { birdc -s "$work/core.sock" show route protocol backup | grep -q '10.254.254.2/32'; }
-dns_installed() { ip -n "$router" route show table 100 172.53.53.53/32 | grep -q 'via 10.254.0.9'; }
+dns_installed() { ip -n "$router" route show table 100 192.0.2.53/32 | grep -q 'via 10.254.0.9'; }
 routed_via_core() {
   for source in 10.254.254.2 10.254.0.8; do
     ip -n "$router" route get 10.1.2.16 from "$source" | grep -q 'via 10.254.0.9 dev transit' || return 1
@@ -96,5 +96,5 @@ wait_for withdrawn
 wait_for routed_via_core
 ip -n "$router" route show 10.1.2.0/24 | grep -q 'dev trusted proto static'
 identity_advertised
-test -z "$(birdc -s "$work/core.sock" show route protocol backup | grep -E '10.1.2.6/32|0.0.0.0/0|172.53.53.53/32' || true)"
+test -z "$(birdc -s "$work/core.sock" show route protocol backup | grep -E '10.1.2.6/32|0.0.0.0/0|192.0.2.53/32' || true)"
 echo 'PASS: connected-only origination, withdrawal, stable identity, standby ARP route, fabric route import, and no route leaks'

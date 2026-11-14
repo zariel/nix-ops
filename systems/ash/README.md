@@ -15,7 +15,8 @@ roles, including SSH access for `chris` and Vector logging.
    and confirm that `/dev/sda` is the intended install disk.
 3. Reserve `10.1.1.55` outside the DHCP pool and add a DNS record for
    `ash.cbannister.casa`. The guest uses `10.1.1.55/24`, gateway `10.1.1.1`,
-   and DNS server `172.53.53.53`. The deployment address is `10.1.1.55`.
+   and the shared DNS VIP from [`lib/network.nix`](../../lib/network.nix).
+   The deployment address is `10.1.1.55`.
    The network configuration matches `ens*`, `enp*`,
    and `eth*` interfaces.
 4. From this repository on the deployment machine, build the system before

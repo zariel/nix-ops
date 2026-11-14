@@ -4,6 +4,12 @@
 
 The DNS infrastructure uses an anycast Virtual IP (VIP) setup with three redundant DNS nodes (dns1, dns2, dns3) providing high availability DNS services to the home network. All nodes are configured to advertise `172.53.53.53` and `10.254.253.53` via BGP during the migration to private addressing, and clients automatically connect to the nearest/healthiest node.
 
+[`lib/network.nix`](../lib/network.nix) defines `dnsVip`, the IPv4 resolver
+address for static clients, and `legacyDnsVip`, the compatibility address.
+The gaming, builder, ash, and trusted-backup configurations reference `dnsVip`.
+The DNS role serves both values by default; the DNS hosts use a separate
+upstream resolver for their own name resolution.
+
 ## Architecture
 
 ```
@@ -28,19 +34,28 @@ DNSdist (Load Balancer & Router)
 #### Migrate to another IPv4 VIP
 
 The private DNS anycast VIP `10.254.253.53/32` is
-[reserved in NetBox](https://netbox.cbannister.xyz/ipam/ip-addresses/85/)
+[recorded in NetBox](https://netbox.cbannister.xyz/ipam/ip-addresses/85/)
 within the infrastructure VIP pool `10.254.253.0/24`.
-All three nodes set `services.dnsVip.ipv4Addresses` to serve both addresses:
+All three nodes inherit `services.dnsVip.ipv4Addresses` from the DNS role,
+which reads the shared values:
 
 ```nix
-services.dnsVip.ipv4Addresses = [
-  "172.53.53.53"
-  "10.254.253.53"
-];
+let
+  network = import ../../lib/network.nix;
+in
+{
+  services.dnsVip.ipv4Addresses = [
+    network.dnsVip
+    network.legacyDnsVip
+  ];
+}
 ```
 
-Configure the same list on all three nodes. Each address is assigned to
-`dnsvip`, listens on UDP and TCP port 53, and is advertised through BGP.
+Static resolver settings must reference `network.dnsVip` instead of copying
+its address. To stage another migration, add the replacement to
+`services.dnsVip.ipv4Addresses` on all three nodes before changing `dnsVip`
+in the shared file. Each served address is assigned to `dnsvip`, listens on
+UDP and TCP port 53, and is advertised through BGP.
 After deploying, verify that the upstream router accepts each `/32` and query
 each VIP with `dig @<vip> gateway.cbannister.casa +short` and
 `dig +tcp @<vip> gateway.cbannister.casa +short`. Both queries must return

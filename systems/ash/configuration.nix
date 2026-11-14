@@ -5,6 +5,7 @@
   ...
 }:
 let
+  network = import ../../lib/network.nix;
   deploymentKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDoKtllnbPNdFQrL0LLsYx6c0mFKdmbmr4bBOIqBqO1c chris@gaming";
 in
 {
@@ -17,7 +18,7 @@ in
       matchConfig.Name = "ens* enp* eth*";
       address = [ "10.1.1.55/24" ];
       gateway = [ "10.1.1.1" ];
-      dns = [ "172.53.53.53" ];
+      dns = [ network.dnsVip ];
       domains = [ "cbannister.casa" ];
     };
   };

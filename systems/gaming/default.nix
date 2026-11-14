@@ -11,6 +11,7 @@
 }:
 
 let
+  network = import ../../lib/network.nix;
   gamemodeSteamCompat = import ./pkgs/gamemode-steam-compat.nix { inherit pkgs; };
   protonGeBin10 = pkgs.callPackage ./pkgs/proton-ge-bin-10.nix { };
   toml = pkgs.formats.toml { };
@@ -134,7 +135,7 @@ in
   networking.hostName = "gaming"; # Define your hostname.
 
   networking.firewall.enable = false;
-  networking.nameservers = [ "172.53.53.53" ];
+  networking.nameservers = [ network.dnsVip ];
   networking.search = [ "cbannister.casa" ];
 
   # Enable networking
@@ -177,7 +178,7 @@ in
       networkConfig.DHCP = "no";
       address = [ "10.1.2.16/24" ];
       gateway = [ "10.1.2.1" ];
-      dns = [ "172.53.53.53" ];
+      dns = [ network.dnsVip ];
       domains = [ "cbannister.casa" ];
     };
     networks."10-enp7s0f0np0" = {
