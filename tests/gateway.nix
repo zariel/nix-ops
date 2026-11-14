@@ -1,7 +1,7 @@
 { pkgs, sopsModule, ... }:
 pkgs.testers.runNixOSTest {
   name = "gateway-policy";
-  globalTimeout = 180;
+  globalTimeout = 240;
   nodes.router = { lib, ... }: {
     imports = [
       sopsModule
@@ -12,6 +12,7 @@ pkgs.testers.runNixOSTest {
     # Client links are created by the test after boot.
     systemd.services.kea-dhcp4-server.wantedBy = lib.mkForce [ ];
     environment.etc."gateway-dhcp.py".source = ./gateway-dhcp.py;
+    environment.etc."gateway-udp.py".source = ./gateway-udp.py;
     networking.useDHCP = false;
     boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
     boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
@@ -71,7 +72,7 @@ pkgs.testers.runNixOSTest {
     links.succeed("ip -d link show bond0.3001 | grep 'id 3001'")
     links.succeed("grep 802.3ad /sys/class/net/bond0/bonding/mode")
     links.succeed("test -z \"$(ip -o link show | grep 'bond0.140')\"")
-    links.succeed("tc qdisc show dev ifb0 | grep 'cake.*ingress'")
+    links.succeed("tc qdisc show dev ifb0 | grep 'cake.*bandwidth 900Mbit.*ingress'")
     links.succeed("wg show wg01 peers | wc -l | grep 3")
     links.fail("journalctl -b -u systemd-networkd --no-pager | grep -E 'Unknown (key|section)|Failed to parse|Failed to read|Invalid argument'")
     links.succeed("networkctl reload")
@@ -117,18 +118,38 @@ pkgs.testers.runNixOSTest {
     for zone in ("guest", "wan"):
         router.fail(f"ip netns exec {zone} curl -fsS --max-time 2 http://10.5.0.8:8080")
 
-    # Exercise routed DNS interception and both explicit inbound DNAT paths.
+    # Exercise DNS migration, outbound restrictions, and inbound DNAT.
     client("transit", "bond0.3001", "10.254.0.0", "10.254.0.1")
     router.succeed("ip netns exec transit ip addr add 172.53.53.53/32 dev lo; ip route add 172.53.53.53/32 via 10.254.0.1")
-    router.succeed("ip netns exec transit python -m http.server 53 --bind 172.53.53.53 >/tmp/dns.log 2>&1 &")
-    router.wait_until_succeeds("ip netns exec iot curl -fsS --max-time 2 http://1.1.1.1:53")
-    router.succeed("ip netns exec app curl -fsS --max-time 2 http://172.53.53.53:53")
+    router.succeed("mkdir -p /tmp/dns-legacy /tmp/dns-preferred; echo legacy > /tmp/dns-legacy/identity; echo preferred > /tmp/dns-preferred/identity")
+    router.succeed("ip netns exec transit python -m http.server 53 --bind 172.53.53.53 --directory /tmp/dns-legacy >/tmp/dns.log 2>&1 &")
+    router.fail("ip netns exec app curl -fsS --max-time 2 http://172.53.53.53:53/identity | grep -x legacy")
+    router.succeed("ip netns exec transit ip addr add 10.254.253.53/32 dev lo; ip route add 10.254.253.53/32 via 10.254.0.1")
+    router.succeed("ip netns exec transit python -m http.server 53 --bind 10.254.253.53 --directory /tmp/dns-preferred >/tmp/dns-new.log 2>&1 &")
+    for zone in ("trusted", "iot", "guest", "servers", "lan"):
+        router.wait_until_succeeds(f"ip netns exec {zone} curl -fsS --max-time 2 http://10.254.253.53:53/identity | grep -x preferred")
+        router.succeed(f"ip netns exec {zone} curl -fsS --max-time 2 http://172.53.53.53:53/identity | grep -x legacy")
+    for zone in ("trusted", "iot"):
+        router.succeed(f"ip netns exec {zone} curl -fsS --max-time 2 http://1.1.1.1:53/identity | grep -x preferred")
+    router.fail("ip netns exec app curl -fsS --max-time 2 http://10.1.1.31:8080")
+    router.fail("ip netns exec app curl -fsS --max-time 2 http://198.18.0.2:8080")
+    router.fail("curl -fsS --max-time 2 http://198.18.0.2:8080")
+    router.succeed("ip netns exec wan python -m http.server 443 --bind 198.18.0.2 >/tmp/wan-https.log 2>&1 &")
+    router.wait_until_succeeds("curl -fsS --max-time 2 http://198.18.0.2:443")
+    router.succeed("ip netns exec wan python -m http.server 853 --bind 198.18.0.2 >/tmp/dot.log 2>&1 &")
+    router.wait_until_succeeds("ip netns exec guest curl -fsS --max-time 2 http://198.18.0.2:853")
+    for zone in ("trusted", "iot"):
+        router.fail(f"ip netns exec {zone} curl -fsS --max-time 2 http://198.18.0.2:853")
+        router.succeed(f"ip netns exec {zone} curl -fsS --max-time 2 http://198.18.0.2:8080")
     router.succeed("ip netns exec trusted ip addr add 10.1.2.60/24 dev peer")
     router.succeed("ip netns exec trusted python -m http.server 59453 --bind 10.1.2.60 >/tmp/roon.log 2>&1 &")
-    router.wait_until_succeeds("ip netns exec wan curl -fsS --max-time 2 http://198.18.0.1:59453")
+    router.wait_until_succeeds("ip netns exec trusted curl -fsS --max-time 2 http://10.1.2.60:59453")
+    router.fail("ip netns exec wan curl -fsS --max-time 2 http://198.18.0.1:59453")
+    router.fail("ip netns exec wan curl -fsS --max-time 2 http://10.1.2.60:59453")
     router.succeed("ip netns exec transit ip addr add 10.45.0.24/32 dev lo; ip route add 10.45.0.24/32 via 10.254.0.1")
     router.succeed("ip netns exec transit python -m http.server 50413 --bind 10.45.0.24 >/tmp/torrent.log 2>&1 &")
     router.wait_until_succeeds("ip netns exec wan curl -fsS --max-time 2 http://198.18.0.1:50413")
+    router.fail("ip netns exec wan curl -fsS --max-time 2 http://10.45.0.24:50413")
     router.succeed("ip netns exec wan ip addr add 1.0.1.1/32 dev lo; ip route add 1.0.1.1/32 via 198.18.0.2")
     router.fail("ip netns exec wan curl --interface 1.0.1.1 -fsS --max-time 2 http://198.18.0.1:50413")
 
@@ -142,8 +163,16 @@ pkgs.testers.runNixOSTest {
     router.fail("ip netns exec transit curl --interface 172.20.0.10 -fsS --max-time 2 http://10.1.2.70:444")
     router.fail("ip netns exec transit curl --interface 10.254.0.1 -fsS --max-time 2 http://10.1.2.70:443")
 
+    # Certificate uploads must be reachable only from routed pods.
+    for zone, address in (("lan", "10.1.0.31"), ("servers", "10.1.1.30")):
+        router.succeed(f"ip netns exec {zone} ip addr add {address}/24 dev peer")
+        router.succeed(f"ip netns exec {zone} python -m http.server 443 --bind {address} >/tmp/{zone}-cert.log 2>&1 &")
+        router.wait_until_succeeds(f"ip netns exec transit curl --interface 172.20.0.10 -fsS --max-time 2 http://{address}:443")
+        router.fail(f"ip netns exec transit curl --interface 10.254.0.1 -fsS --max-time 2 http://{address}:443")
+
     # IPv4 trust does not imply IPv6 trust. Internal ICMPv6 is permitted even
     # across pairs that deny TCP; WAN echo requests remain denied.
+    # Keep fixture prefixes distinct from the harness eth1 subnet (2001:db8:1::/64).
     for zone, interface, prefix in (
         ("trusted", "bond0.20", "fd00:20"),
         ("iot", "bond0.40", "fd00:40"),
@@ -151,7 +180,7 @@ pkgs.testers.runNixOSTest {
         ("servers", "bond0.10", "fd00:10"),
         ("app", "ve-app", "fd00:5"),
         ("transit", "bond0.3001", "fd00:3001"),
-        ("wan", "wan0", "2001:db8:1"),
+        ("wan", "wan0", "2001:db8:ffff"),
     ):
         router.succeed(f"ip -6 address add {prefix}::1/64 dev {interface} nodad")
         router.succeed(f"ip netns exec {zone} ip -6 address add {prefix}::2/64 dev peer nodad")
@@ -165,6 +194,60 @@ pkgs.testers.runNixOSTest {
     router.fail("ip netns exec guest curl -gfsS --max-time 2 http://[fd00:20::2]:8081")
     router.succeed("ip netns exec guest ping -6 -c 1 -W 2 fd00:20::2")
     router.fail("ip netns exec wan ping -6 -c 1 -W 2 fd00:20::2")
+
+    # Unsolicited mDNS replies cover both unicast legs of legacy reflection.
+    # A preceding multicast query must not be required for conntrack acceptance.
+    # Keep fixture prefixes distinct from the harness eth1 subnet (2001:db8:1::/64).
+    for zone, interface, prefix in (("thread", "bond0.1100", "fd00:1100"), ("matter", "bond0.1101", "fd00:1101")):
+        router.succeed(f"ip netns add {zone}; ip link add {interface} type veth peer name peer; ip link set peer netns {zone}; ip link set {interface} up")
+        router.succeed(f"ip -n {zone} link set lo up; ip -n {zone} link set peer up")
+        router.succeed(f"ip -6 addr add {prefix}::1/64 dev {interface} nodad; ip -n {zone} -6 addr add {prefix}::2/64 dev peer nodad")
+
+    def udp_server(namespace, address, port, log_path):
+        command = f"python /etc/gateway-udp.py listen {address} {port} {log_path}"
+        if namespace:
+            command = f"ip netns exec {namespace} {command}"
+        router.succeed(f"{command} >/tmp/udp-server.log 2>&1 &")
+        router.wait_until_succeeds(f"test -f {log_path}.ready")
+
+    def udp_packet(namespace, source, sport, destination, dport, payload):
+        command = f"python /etc/gateway-udp.py send {source} {sport} {destination} {dport} {payload}"
+        router.succeed(f"ip netns exec {namespace} {command}" if namespace else command)
+
+    for zone, v4, v6 in (("trusted", "10.1.2", "fd00:20"), ("iot", "10.1.3", "fd00:40"), ("thread", None, "fd00:1100"), ("matter", None, "fd00:1101")):
+        addresses = [(v6 + "::1", v6 + "::2")]
+        if v4:
+            addresses.append((v4 + ".1", v4 + (".11" if zone == "trusted" else ".14")))
+        for index, (gateway, client_address) in enumerate(addresses):
+            for namespace, source, destination in ((zone, client_address, gateway), (None, gateway, client_address)):
+                receiver = None if namespace else zone
+                log_path = f"/tmp/mdns-{zone}-{index}-{namespace or 'router'}"
+                udp_server(receiver, destination, 45002, log_path)
+                udp_packet(namespace, source, 5353, destination, 45002, "mdns-reply")
+                router.wait_until_succeeds(f"grep -x mdns-reply {log_path}")
+                udp_packet(namespace, source, 5354, destination, 45002, "wrong-source")
+                router.sleep(1)
+                router.fail(f"grep -x wrong-source {log_path}")
+
+    # TCP and UDP encrypted DNS are denied on WAN for both address families.
+    for address in ("198.18.0.2", "2001:db8:ffff::2"):
+        log_path = "/tmp/dot-" + ("v6" if ":" in address else "v4")
+        udp_server("wan", address, 853, log_path)
+        for zone in ("trusted", "iot"):
+            source = ("fd00:20::2" if zone == "trusted" else "fd00:40::2") if ":" in address else ("10.1.2.11" if zone == "trusted" else "10.1.3.14")
+            udp_packet(zone, source, 45003, address, 853, "blocked-dot")
+        control_log = log_path + "-control"
+        udp_server("wan", address, 45004, control_log)
+        for zone in ("trusted", "iot"):
+            source = ("fd00:20::2" if zone == "trusted" else "fd00:40::2") if ":" in address else ("10.1.2.11" if zone == "trusted" else "10.1.3.14")
+            udp_packet(zone, source, 45003, address, 45004, zone)
+            router.wait_until_succeeds(f"grep -x {zone} {control_log}")
+        router.fail(f"grep -x blocked-dot {log_path}")
+    router.succeed("ip netns exec wan python -m http.server 853 --bind 2001:db8:ffff::2 >/tmp/dot-v6-tcp.log 2>&1 &")
+    router.wait_until_succeeds("ip netns exec wan curl -gfsS --max-time 2 http://[2001:db8:ffff::2]:853")
+    for zone in ("trusted", "iot"):
+        router.succeed(f"ip netns exec {zone} curl -gfsS --max-time 2 http://[2001:db8:ffff::2]:8081")
+        router.fail(f"ip netns exec {zone} curl -gfsS --max-time 2 http://[2001:db8:ffff::2]:853")
 
     # Thread routing belongs to its infrastructure VLAN, never an IoT next hop.
     router.succeed("ip netns exec iot ip -6 address add fd42:dfb5:24e4:1::2/64 dev peer nodad")

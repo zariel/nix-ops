@@ -69,6 +69,8 @@ pkgs.testers.runNixOSTest {
         for chain in ("input", "forward"):
             router.succeed(f"nft insert rule inet gateway {chain} iifname wan0 tcp dport 8080 accept")
             router.succeed(f"nft insert rule inet gateway {chain} iifname wan0 udp dport 8082 accept")
+        router.succeed("nft insert rule inet gateway output oifname wan0 tcp dport 8080 accept")
+        router.succeed("nft insert rule inet gateway output oifname wan0 udp dport 8082 accept")
 
     receiver = """
     import socket

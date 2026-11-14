@@ -38,7 +38,7 @@ in
       option-data = [
         {
           name = "domain-name-servers";
-          data = "172.53.53.53";
+          data = "10.254.253.53";
         }
       ];
       option-def = [

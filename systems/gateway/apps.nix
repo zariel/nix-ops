@@ -80,7 +80,7 @@ in
         ];
       };
       networking.useHostResolvConf = false;
-      networking.nameservers = [ "172.53.53.53" ];
+      networking.nameservers = [ "10.254.253.53" ];
       # The gateway's container zone is the policy boundary.
       networking.firewall.enable = false;
     };

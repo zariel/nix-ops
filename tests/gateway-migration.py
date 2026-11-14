@@ -3,6 +3,10 @@ import json
 start_all()
 primary.wait_until_succeeds("systemctl is-active keepalived.service")
 primary.wait_for_unit("frr.service")
+primary.wait_for_unit("prometheus-node-exporter.service")
+primary.succeed("ss -H -lnt | grep -F '10.254.254.1:9100 '")
+primary.fail("ss -H -lnt | grep -E '0.0.0.0:9100|\\[::\\]:9100'")
+primary.succeed("curl -fsS http://10.254.254.1:9100/metrics | grep '^node_uname_info'")
 core.wait_for_unit("frr.service")
 core.wait_for_unit("http.service")
 backup.wait_for_unit("frr.service")
@@ -19,7 +23,7 @@ def owns(machine, interface):
 
 def path(next_hop):
     core.wait_until_succeeds(f"ip route get 10.1.2.10 | grep 'via {next_hop} '", timeout=30)
-    client.wait_until_succeeds("curl -fsS --connect-timeout 1 --max-time 2 http://172.53.53.53:53", timeout=30)
+    client.wait_until_succeeds("curl -fsS --connect-timeout 1 --max-time 2 http://10.254.253.53:53", timeout=30)
 
 
 primary.wait_until_succeeds("ip -4 addr show dev bond0.20 | grep '10.1.2.1/24'")

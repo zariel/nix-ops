@@ -120,15 +120,38 @@ let
           mask = "::ffff:ffff:ffff:ffff";
           value = "::7c7d:c6ff:fec7:26ac";
         };
-        dport = setRef "roon_arc_ports";
+        dport = 3074;
       };
-      expected = "meta l4proto tcp ip6 daddr & ::ffff:ffff:ffff:ffff == ::7c7d:c6ff:fec7:26ac th dport @roon_arc_ports counter accept";
+      expected = "meta l4proto tcp ip6 daddr & ::ffff:ffff:ffff:ffff == ::7c7d:c6ff:fec7:26ac th dport 3074 counter accept";
     };
     testIcmpv6 = {
       expr = render "ipv6" (icmpv6 {
         icmpv6Type = "packet-too-big";
       });
       expected = "meta l4proto ipv6-icmp icmpv6 type packet-too-big counter accept";
+    };
+    testDnat = {
+      expr = render "ipv4" (tcp {
+        daddr = "10.45.0.24";
+        dport = 50413;
+        ctStatus = "dnat";
+      });
+      expected = "meta l4proto tcp ip daddr 10.45.0.24 th dport 50413 ct status dnat counter accept";
+    };
+    testHopLimit = {
+      expr = render "ipv6" (icmpv6 {
+        icmpv6Type = "nd-router-advert";
+        saddr = "fe80::/10";
+        hopLimit = 255;
+      });
+      expected = "meta l4proto ipv6-icmp ip6 saddr fe80::/10 icmpv6 type nd-router-advert ip6 hoplimit 255 counter accept";
+    };
+    testIcmp = {
+      expr = render "ipv4" {
+        l4proto = "icmp";
+        icmpType = "echo-request";
+      };
+      expected = "meta l4proto icmp icmp type echo-request counter accept";
     };
     testRouterIdentity = {
       expr = render "ipv6" (icmpv6 {
@@ -140,10 +163,10 @@ let
     };
     testDrop = {
       expr = render "ipv4" {
-        saddr.set = "geoip_cn_ru";
+        saddr.set = "blocked_sources";
         verdict = "drop";
       };
-      expected = "ip saddr @geoip_cn_ru counter drop";
+      expected = "ip saddr @blocked_sources counter drop";
     };
     testUnrestricted = {
       expr = render "ipv4" { verdict = "accept"; };
@@ -151,6 +174,12 @@ let
     };
     testInvalidMatches = {
       expr = map (rejects "ipv4") [
+        {
+          l4proto = "tcp";
+          icmpType = "echo-request";
+        }
+        { hopLimit = 255; }
+        { ctStatus = "snat"; }
         {
           l4proto = "tcp";
           dprot = 22;
@@ -177,6 +206,9 @@ let
         }
       ];
       expected = [
+        true
+        true
+        true
         true
         true
         true

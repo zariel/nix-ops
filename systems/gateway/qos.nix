@@ -5,7 +5,7 @@ let
     tc=${pkgs.iproute2}/bin/tc
     # replace is idempotent and updates shaping without cycling the WAN link.
     $tc qdisc replace dev wan0 root cake bandwidth 950mbit dual-srchost nat rtt 20ms
-    $tc qdisc replace dev ifb0 root cake bandwidth 890mbit dual-dsthost nat ingress rtt 20ms
+    $tc qdisc replace dev ifb0 root cake bandwidth 900mbit dual-dsthost nat ingress rtt 20ms
     $tc qdisc replace dev wan0 handle ffff: ingress
     $tc filter replace dev wan0 parent ffff: protocol all pref 10 matchall action mirred egress redirect dev ifb0
   '';

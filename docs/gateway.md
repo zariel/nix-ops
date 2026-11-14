@@ -1,8 +1,19 @@
 # Gateway migration
 
 `nixosConfigurations.gateway` ports the running VyOS gateway inspected on
-2026-10-26. The live configuration takes precedence over `../vyos-config`.
+2026-10-26, reconciled with `../vyos-config` main `760dcac3` on 2026-11-14.
+Selected live addresses and firewall rules were verified over SSH on 2026-11-14.
+The live configuration takes precedence when preparing cutover.
 No installation or activation is performed by adding this host.
+
+The persistent Jujutsu workspace is `/home/chris/nix-ops-gateway` (`gateway`).
+Run gateway development and validation commands there; the default workspace
+remains on `main`.
+
+The NixOS replacement retains VyOS's trusted VRRP identity: permanent
+`10.1.2.5/32`, floating `10.1.2.1/24`, backup peer `10.1.2.6`, VRID 20 and
+priority 200 with preemption disabled. Stop VyOS before starting the NixOS
+primary on the shared network; they must not run with the same node address.
 
 ## Ownership and maintenance
 
@@ -22,7 +33,8 @@ No installation or activation is performed by adding this host.
   serve persistent secondary copies through the DNS VIP.
   Reservations are ordinary Nix entries
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
-  All 58 live reservations are included, including MACs used in different VLANs.
+  All 59 live reservations are included, including MACs used in different VLANs
+  and `bc250-lounge`, which is absent from the VyOS repository scripts.
 - Chrony, Avahi, node-exporter and FRR run as native systemd services. Matchbox
   0.11.0 runs as a native service in a NixOS container.
   UniFi OS Server runs separately on pve2 VM 203 at `10.1.0.23`;
@@ -36,7 +48,8 @@ No installation or activation is performed by adding this host.
 - Application units wait for `network-online.target`. Native systemd directory
   management owns service state/runtime/log directories.
 - nftables classifies `ve-*` interfaces as the container zone, preserving packet
-  policy through the routed namespaces. Containers use the DNS VIP; Podman
+  policy through the routed namespaces. Matchbox cannot initiate connections
+  to the router, servers, transit or WAN; established replies remain permitted. Podman
   networking and the shared application bridge are removed.
 
 Kea is configured through `services.kea.dhcp4.settings`; NixOS generates its
@@ -52,7 +65,8 @@ units; it does not wait for the WAN or unused ports.
 The gateway is the writable primary for `dhcp.cbannister.casa` and the reverse
 zones of its five DHCPv4 networks. Kea D2 submits authenticated updates over
 loopback. Each DNS VM transfers these zones from `10.254.254.1` and answers
-queries from its local persistent copy. Clients continue using `172.53.53.53`.
+queries from its local persistent copy. DHCP advertises `10.254.253.53`;
+direct access to `172.53.53.53` remains permitted during migration.
 Static `cbannister.casa` and `unifi` forward zones remain managed independently
 on each DNS VM.
 
@@ -104,7 +118,7 @@ Verify a leased address through each VM before relying on the VIP:
 dig @10.254.53.0 -x 10.1.2.10
 dig @10.254.53.2 -x 10.1.2.10
 dig @10.254.53.4 -x 10.1.2.10
-dig @172.53.53.53 chris-iphone.trusted.dhcp.cbannister.casa A
+dig @10.254.253.53 chris-iphone.trusted.dhcp.cbannister.casa A
 ```
 
 Use `journalctl -u kea-dhcp-ddns-server -u bind` on the gateway to inspect
@@ -183,8 +197,8 @@ sudo routerctl connections
 sudo routerctl bgp
 sudo routerctl bgp-neighbors 10.254.0.1
 sudo routerctl bgp-prefixes
-sudo routerctl bgp-route 172.53.53.53/32
-sudo routerctl route 172.53.53.53
+sudo routerctl bgp-route 10.254.253.53/32
+sudo routerctl route 10.254.253.53
 sudo routerctl igmp
 sudo routerctl mld
 sudo routerctl pim
@@ -277,18 +291,29 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   through the ICX. ISP global prefixes are not advertised to LANs. The planned
   /56 delegation settings remain provisioned; verify the lease/prefix when
   enabling WAN IPv6 because a new DHCPv6 DUID can change the ISP allocation.
-- DNS interception follows the live router: IPv4 IoT/WireGuard, IPv6 IoT/trusted.
-  IPv4 trusted DNS is not intercepted. The management NTP redirect now matches
+- DNS interception redirects IPv4 trusted, IoT and WireGuard requests to
+  `10.254.253.53`, exempting both IPv4 DNS VIPs. IPv6 DNS interception is removed.
+  Trusted and IoT WAN policy blocks TCP and UDP port 853 for both families.
+  The management NTP redirect matches
   `bond0.100`, correcting the old `bond0` match.
 - The zone policies retain permissive rules such as IPv6 transit-to-router and
   IoT-to-containers. This migration does not silently tighten those rules.
   Kernel warnings are forwarded to the existing TCP syslog collector through rsyslog.
   Drop counters replace VyOS's per-rule logging; inspect `nft list table inet gateway`.
-- CN/RU IPv4 ranges are a fixed snapshot in `geoip-cn-ru.nft`, used only on the
-  same transit/WAN paths as before. They will age; refresh deliberately from a
-  trusted GeoIP source. No automatic network fetch is part of boot or activation.
+- WAN router egress allows DHCP, resolver DNS, NTP, HTTPS, WireGuard and selected
+  ICMP/IPv6 link-control traffic. WAN IPv4 source validation is loose to permit
+  asymmetric routes. Torrent ingress requires TCP destination NAT; public Roon
+  ARC access is removed. The live CN/RU transit/WAN policy remains backed by
+  the fixed snapshot in `geoip-cn-ru.nft`; refresh it deliberately from a trusted source.
+- Avahi multicast queries may use ephemeral source ports. UDP replies from 5353
+  to unprivileged client ports are allowed in both directions on reflector LANs.
+- Node exporter listens only on `10.254.254.1`. Routed pod access includes PDU
+  and IPMI HTTPS certificate uploads and the existing Proxmox management ports.
+- The pinned kernel is 6.18.63, newer than the 6.18.56 fix for
+  [CVE-2026-98432](https://kernel.googlesource.com/pub/scm/linux/security/vulns/+/refs/heads/master/cve/published/2026/CVE-2026-98432.mbox).
+  VyOS's temporary IPv4-options mitigation is therefore unnecessary here.
 - Driver defaults replace the old offload/ring-buffer/sysctl performance tuning.
-  CAKE retains 950 Mbit/s upload, 890 Mbit/s download, 20 ms RTT and NAT-aware
+  CAKE retains 950 Mbit/s upload, 900 Mbit/s download, 20 ms RTT and NAT-aware
   per-host fairness. Validate throughput and latency on the actual hardware.
 - TFTP listens through atftpd, with access constrained by the firewall.
   BIOS clients get `undionly.kpxe`, UEFI x86 clients get `ipxe.efi`,
@@ -352,8 +377,8 @@ Before the first NixOS boot:
 
 At cutover, verify LACP members, VLAN MTUs, WAN lease/default routes, IPv6 PD,
 all four BGP peers, learned DNS/service routes, DHCP renewals in each VLAN,
-BIOS/UEFI/iPXE boot, WireGuard, UniFi adoption, mDNS/Thread, Roon ARC, torrent
-forwarding and CAKE latency. Test guest/IoT isolation from real clients too.
+BIOS/UEFI/iPXE boot, WireGuard, UniFi adoption, mDNS/Thread, blocked public Roon ARC access,
+torrent forwarding and CAKE latency. Test guest/IoT isolation from real clients too.
 The isolated VM checks cover packet policy, native application startup, namespace
 isolation and BGP route installation/withdrawal through an independent peer's
 kernel routing table. They cannot prove ISP negotiation, switch LACP compatibility

@@ -40,6 +40,19 @@ let
     ];
     comment = "DHCP";
   };
+  blockDot = tcpUdp {
+    dport = 853;
+    verdict = "drop";
+    comment = "Block encrypted DNS";
+  };
+  mdnsReply = udp {
+    sport = 5353;
+    dport = {
+      from = 1024;
+      to = 65535;
+    };
+    comment = "Avahi unicast replies";
+  };
   ssh = tcp {
     dport = 22;
     comment = "SSH";
@@ -56,7 +69,7 @@ let
     comment = "DNS";
   };
   dns4 = tcpUdp {
-    daddr = "172.53.53.53";
+    daddr = setRef "dns_vips";
     dport = 53;
     comment = "DNS";
   };
@@ -91,6 +104,15 @@ in
 {
   inherit zones;
   addressSets = {
+    dns_vips = addressSet [
+      "10.254.253.53"
+      "172.53.53.53"
+    ];
+    proxmox_hosts = addressSet [
+      "10.1.1.31"
+      "10.1.1.32"
+      "10.1.1.41"
+    ];
     k8s_nodes = addressSet [
       "10.254.1.1"
       "10.254.1.3"
@@ -115,7 +137,7 @@ in
       "10.1.2.15"
       "10.1.1.31"
       "10.1.1.41"
-      "10.1.0.1"
+      "10.254.254.1"
       "10.1.1.155"
       "10.1.2.16"
       "10.1.1.32"
@@ -156,37 +178,14 @@ in
       2049
       111
     ];
-    roon_arc_ports = portSet [ 59453 ];
+    proxmox_ports = portSet [
+      8006
+      8007
+    ];
   };
 
   # Omitted zone pairs are denied. Rules within a pair are evaluated in order.
   ipv4 = {
-    containers.to.local = [
-      dns
-      dhcp
-      (udp {
-        dport = 123;
-        comment = "NTP";
-      })
-    ];
-    containers.to.servers = [ accept ];
-    containers.to.transit = [
-      dns4
-      (tcp {
-        daddr = setRef "k8s_nodes";
-        dport = [
-          6443
-          50000
-        ];
-        comment = "Node management";
-      })
-      (tcpUdp {
-        daddr = "10.45.0.55";
-        dport = 53;
-        comment = "DNS";
-      })
-    ];
-    containers.to.wan = [ accept ];
     guest.to.containers = [
       dns
     ];
@@ -195,6 +194,7 @@ in
     guest.to.wan = [ accept ];
     iot.to.containers = [ accept ];
     iot.to.local = [
+      mdnsReply
       dhcp
       ntp4
       {
@@ -243,9 +243,21 @@ in
         comment = "AirPlay";
       })
     ];
-    iot.to.wan = [ accept ];
+    iot.to.wan = [
+      blockDot
+      accept
+    ];
     lan.to.containers = [ accept ];
     lan.to.local = [
+      {
+        l4proto = "icmp";
+        saddr = "10.1.0.0/24";
+        icmpType = [
+          "destination-unreachable"
+          "time-exceeded"
+          "parameter-problem"
+        ];
+      }
       dhcp
       ntp4
       tftp
@@ -282,13 +294,14 @@ in
     lan.to.wan = [ accept ];
     local.to.containers = [ accept ];
     local.to.iot = [
+      mdnsReply
       {
         l4proto = "igmp";
         comment = "Multicast membership";
       }
       (udp {
+        daddr = "224.0.0.251";
         dport = 5353;
-        sport = 5353;
         comment = "mDNS";
       })
     ];
@@ -319,10 +332,6 @@ in
         saddr = dhcpDns.primary;
         comment = "DNS zone notifications";
       })
-      {
-        l4proto = 89;
-        comment = "Routing protocol 89";
-      }
       (tcp {
         daddr = "10.254.0.1";
         dport = 179;
@@ -332,6 +341,7 @@ in
       icmp4
     ];
     local.to.trusted = [
+      mdnsReply
       {
         l4proto = 112;
         saddr = "10.1.2.5";
@@ -344,8 +354,8 @@ in
         comment = "Multicast membership";
       }
       (udp {
+        daddr = "224.0.0.251";
         dport = 5353;
-        sport = 5353;
         comment = "mDNS";
       })
       (udp {
@@ -353,7 +363,32 @@ in
         comment = "WireGuard";
       })
     ];
-    local.to.wan = [ accept ];
+    local.to.wan = [
+      {
+        daddr = [
+          "224.0.0.0/4"
+          "255.255.255.255"
+        ];
+        verdict = "drop";
+      }
+      (tcpUdp {
+        daddr = "1.1.1.1";
+        dport = 53;
+      })
+      (udp { dport = 123; })
+      (tcp { dport = 443; })
+      (udp { sport = 51820; })
+      {
+        l4proto = "icmp";
+        icmpType = [
+          "echo-request"
+          "echo-reply"
+          "destination-unreachable"
+          "time-exceeded"
+          "parameter-problem"
+        ];
+      }
+    ];
     servers.to.containers = [ accept ];
     servers.to.lan = [
       (udp {
@@ -415,15 +450,6 @@ in
         comment = "DNS";
       })
       (tcp {
-        daddr = "10.5.0.2";
-        dport = [
-          6443
-          50000
-        ];
-        saddr = setRef "transit_pods";
-        comment = "Node management";
-      })
-      (tcp {
         daddr = "10.5.0.4";
         dport = 8083;
         saddr = setRef "transit_pods";
@@ -438,6 +464,12 @@ in
     ];
     transit.to.iot = [ icmp4 ];
     transit.to.lan = [
+      (tcp {
+        saddr = setRef "transit_pods";
+        daddr = "10.1.0.31";
+        dport = 443;
+        comment = "PDU certificates";
+      })
       icmp4
       (udp {
         daddr = setRef "snmp_targets";
@@ -462,10 +494,6 @@ in
         dport = 53;
         comment = "DHCP DNS replication";
       })
-      {
-        l4proto = 89;
-        comment = "Routing protocol 89";
-      }
       (tcp {
         daddr = "10.254.0.0";
         dport = 179;
@@ -488,6 +516,17 @@ in
       })
     ];
     transit.to.servers = [
+      (tcp {
+        saddr = setRef "transit_pods";
+        daddr = "10.1.1.30";
+        dport = 443;
+        comment = "IPMI certificates";
+      })
+      (tcp {
+        daddr = setRef "proxmox_hosts";
+        dport = setRef "proxmox_ports";
+        comment = "Proxmox management";
+      })
       icmp4
       (tcp {
         daddr = setRef "metrics_targets";
@@ -534,7 +573,7 @@ in
     ];
     transit.to.wan = [
       {
-        daddr = setRef "geoip_cn_ru";
+        daddr.set = "geoip_cn_ru";
         verdict = "drop";
         comment = "GeoIP block";
       }
@@ -563,6 +602,7 @@ in
     trusted.to.iot = [ accept ];
     trusted.to.lan = [ accept ];
     trusted.to.local = [
+      mdnsReply
       {
         l4proto = 112;
         saddr = "10.1.2.6";
@@ -623,7 +663,10 @@ in
         comment = "Node management";
       })
     ];
-    trusted.to.wan = [ accept ];
+    trusted.to.wan = [
+      blockDot
+      accept
+    ];
     wan.to.local = [
       (udp {
         dport = 51820;
@@ -631,29 +674,24 @@ in
       })
     ];
     wan.to.servers = [
-      (tcpUdp {
+      (tcp {
         daddr = "10.45.0.24";
         dport = 50413;
+        ctStatus = "dnat";
         comment = "Torrent forwarding";
       })
     ];
     wan.to.transit = [
       {
-        saddr = setRef "geoip_cn_ru";
+        saddr.set = "geoip_cn_ru";
         verdict = "drop";
         comment = "GeoIP block";
       }
       (tcp {
         daddr = "10.45.0.24";
         dport = 50413;
+        ctStatus = "dnat";
         comment = "Torrent forwarding";
-      })
-    ];
-    wan.to.trusted = [
-      (tcp {
-        daddr = "10.1.2.60";
-        dport = setRef "roon_arc_ports";
-        comment = "Roon ARC";
       })
     ];
   };
@@ -668,6 +706,7 @@ in
       {
         iot.to.containers = [ accept ];
         iot.to.local = [
+          mdnsReply
           (icmpv6 {
             icmpv6Type = "nd-router-advert";
             verdict = "drop";
@@ -675,39 +714,32 @@ in
           })
           icmp6
           (udp {
+            daddr = "ff02::fb";
             dport = 5353;
-            sport = 5353;
             comment = "mDNS";
           })
         ];
         iot.to.transit = [
           icmp6
-          (tcpUdp {
-            daddr = "fd74:f571:d3bd:53::53";
-            dport = [
-              53
-              853
-            ];
-            comment = "DNS";
-          })
         ];
-        iot.to.wan = [ accept ];
+        iot.to.wan = [
+          blockDot
+          accept
+        ];
         local.to.iot = [
+          mdnsReply
           icmp6
           (udp {
+            daddr = "ff02::fb";
             dport = 5353;
-            sport = 5353;
             comment = "mDNS";
           })
         ];
         local.to.transit = [
-          {
-            l4proto = 89;
-            comment = "Routing protocol 89";
-          }
           icmp6
         ];
         local.to.trusted = [
+          mdnsReply
           icmp6
           (udp {
             dport = 546;
@@ -715,35 +747,73 @@ in
             comment = "DHCPv6 client";
           })
           (udp {
+            daddr = "ff02::fb";
             dport = 5353;
             comment = "mDNS";
           })
         ];
-        local.to.wan = [ accept ];
+        local.to.wan = [
+          (icmpv6 {
+            icmpv6Type = "nd-router-solicit";
+            daddr = "ff02::2";
+            hopLimit = 255;
+          })
+          (icmpv6 {
+            icmpv6Type = [
+              "nd-neighbor-solicit"
+              "nd-neighbor-advert"
+            ];
+            hopLimit = 255;
+          })
+          (icmpv6 {
+            icmpv6Type = [
+              "mld-listener-report"
+              "mld-listener-done"
+              "mld2-listener-report"
+            ];
+            daddr = "ff02::/16";
+            hopLimit = 1;
+          })
+          {
+            daddr = "ff00::/8";
+            verdict = "drop";
+          }
+          (tcpUdp {
+            daddr = "2606:4700:4700::1111";
+            dport = 53;
+          })
+          (udp { dport = 123; })
+          (tcp { dport = 443; })
+          (udp { sport = 51820; })
+          (icmpv6 {
+            icmpv6Type = [
+              "echo-request"
+              "echo-reply"
+            ];
+          })
+        ]
+        ++ icmp6Errors;
         transit.to.local = [ accept ];
         trusted.to.containers = [ accept ];
         trusted.to.local = [
+          mdnsReply
           icmp6
           (udp {
+            daddr = "ff02::fb";
             dport = 5353;
-            sport = 5353;
             comment = "mDNS";
           })
           ssh
         ];
         trusted.to.transit = [
           icmp6
-          (tcpUdp {
-            daddr = "fd74:f571:d3bd:53::53";
-            dport = [
-              53
-              853
-            ];
-            comment = "DNS";
-          })
         ];
-        trusted.to.wan = [ accept ];
+        trusted.to.wan = [
+          blockDot
+          accept
+        ];
         thread.to.local = [
+          mdnsReply
           (icmpv6 {
             icmpv6Type = "nd-router-advert";
             saddr = "fe80::892:17ff:febd:446e";
@@ -757,31 +827,34 @@ in
           })
           icmp6
           (udp {
-            sport = 5353;
+            daddr = "ff02::fb";
             dport = 5353;
             comment = "mDNS";
           })
         ];
         local.to.thread = [
+          mdnsReply
           icmp6
           (udp {
-            sport = 5353;
+            daddr = "ff02::fb";
             dport = 5353;
             comment = "mDNS";
           })
         ];
         matter.to.local = [
+          mdnsReply
           icmp6
           (udp {
-            sport = 5353;
+            daddr = "ff02::fb";
             dport = 5353;
             comment = "mDNS";
           })
         ];
         local.to.matter = [
+          mdnsReply
           icmp6
           (udp {
-            sport = 5353;
+            daddr = "ff02::fb";
             dport = 5353;
             comment = "mDNS";
           })
@@ -841,19 +914,30 @@ in
             {
               local = [
                 (icmpv6 {
+                  icmpv6Type = "mld-listener-query";
+                  saddr = "fe80::/10";
+                  daddr = "ff02::/16";
+                  hopLimit = 1;
+                })
+                (icmpv6 {
                   icmpv6Type = "nd-router-advert";
+                  hopLimit = 255;
+                  saddr = "fe80::/10";
                   comment = "ICMPv6";
                 })
                 (icmpv6 {
                   icmpv6Type = "nd-router-solicit";
+                  hopLimit = 255;
                   comment = "ICMPv6";
                 })
                 (icmpv6 {
                   icmpv6Type = "nd-neighbor-solicit";
+                  hopLimit = 255;
                   comment = "ICMPv6";
                 })
                 (icmpv6 {
                   icmpv6Type = "nd-neighbor-advert";
+                  hopLimit = 255;
                   comment = "ICMPv6";
                 })
                 (udp {
@@ -883,16 +967,6 @@ in
                     4500
                   ];
                   comment = "Game console";
-                })
-              ];
-              trusted = [
-                (tcp {
-                  daddr = {
-                    mask = "::ffff:ffff:ffff:ffff";
-                    value = "::7c7d:c6ff:fec7:26ac";
-                  };
-                  dport = setRef "roon_arc_ports";
-                  comment = "Roon ARC";
                 })
               ];
             }

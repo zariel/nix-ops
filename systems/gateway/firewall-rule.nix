@@ -10,6 +10,9 @@ let
     sport = "th sport";
     dport = "th dport";
     icmpv6Type = "icmpv6 type";
+    icmpType = "icmp type";
+    ctStatus = "ct status";
+    hopLimit = "ip6 hoplimit";
   };
   unknown = lib.subtractLists (
     builtins.attrNames fields
@@ -63,6 +66,11 @@ let
       ]
     then
       port item
+    else if field == "hopLimit" then
+      assert lib.assertMsg (
+        builtins.isInt item && item >= 0 && item <= 255
+      ) "Hop limits must be between 0 and 255.";
+      toString item
     else if field == "l4proto" && builtins.isInt item then
       assert lib.assertMsg (
         item >= 0 && item <= 255
@@ -119,6 +127,13 @@ assert lib.assertMsg (
 assert lib.assertMsg (
   !(rule ? icmpv6Type) || (family == "ipv6" && protocols == [ "ipv6-icmp" ])
 ) "Gateway firewall ICMPv6 types require IPv6 and the ipv6-icmp protocol.";
+assert lib.assertMsg (
+  !(rule ? icmpType) || (family == "ipv4" && protocols == [ "icmp" ])
+) "Gateway firewall ICMP types require IPv4 and ICMP.";
+assert lib.assertMsg (!(rule ? hopLimit) || family == "ipv6") "Hop limits require IPv6.";
+assert lib.assertMsg (
+  !(rule ? ctStatus) || rule.ctStatus == "dnat"
+) "Only destination NAT status is supported.";
 lib.concatStringsSep " " (
   map match (
     lib.filter (field: builtins.hasAttr field rule) [
@@ -129,6 +144,9 @@ lib.concatStringsSep " " (
       "sport"
       "dport"
       "icmpv6Type"
+      "icmpType"
+      "ctStatus"
+      "hopLimit"
     ]
   )
   ++ [

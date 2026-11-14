@@ -108,17 +108,19 @@ in
           chain input {
             type filter hook input priority filter; policy drop;
             iifname "lo" accept
+            # Lease bootstrap must work before a default route exists for source validation.
+            iifname "wan0" meta nfproto ipv4 udp sport 67 udp dport 68 accept
+            iifname "wan0" meta nfproto ipv6 udp sport 547 udp dport 546 accept
+            # Loose source validation permits asymmetric routing but rejects unroutable WAN sources.
+            iifname "wan0" meta nfproto ipv4 fib saddr oif missing counter drop
             ct state invalid drop
             ct state established,related accept
-            # WAN lease bootstrap is independent of the zone policy.
-            iifname "wan0" udp sport 67 udp dport 68 accept
-            iifname "wan0" udp sport 547 udp dport 546 accept
-            # Transit monitoring reaches the gateway's loopback identity.
-            iifname "bond0.3001" ip saddr 172.20.0.0/16 ip daddr 10.254.254.1 tcp dport 9100 accept
+            iifname "bond0.100" ip saddr 10.1.0.0/24 icmp type echo-request limit rate 10/second burst 20 packets counter accept
             ${dispatch "input"}
           }
           chain forward {
             type filter hook forward priority filter; policy drop;
+            iifname "wan0" meta nfproto ipv4 fib saddr oif missing counter drop
             ct state invalid drop
             ct state established,related accept
             # A zone includes all its interfaces, including WireGuard -> trusted.
@@ -133,7 +135,8 @@ in
             ct state invalid drop
             ct state established,related accept
             # DHCP replies and router advertisements bypass per-zone output rules.
-            oifname "wan0" udp sport { 68, 546 } udp dport { 67, 547 } accept
+            oifname "wan0" meta nfproto ipv4 udp sport 68 udp dport 67 accept
+            oifname "wan0" meta nfproto ipv6 udp sport 546 udp dport 547 accept
             oifname { "bond0.10", "bond0.20", "bond0.30", "bond0.40", "bond0.100" } udp sport 67 udp dport 68 accept
             oifname { "bond0.20", "bond0.40" } meta l4proto ipv6-icmp accept
             # Kernel log collector is routed through transit, not the servers VLAN.
@@ -146,11 +149,9 @@ in
           }
           chain prerouting {
             type nat hook prerouting priority dstnat; policy accept;
-            iifname { "bond0.40", "wg01" } ip daddr != 172.53.53.53 meta l4proto { tcp, udp } th dport 53 counter dnat ip to 172.53.53.53
-            iifname { "bond0.20", "bond0.40" } ip6 daddr != fd74:f571:d3bd:53::53 meta l4proto { tcp, udp } th dport 53 counter dnat ip6 to fd74:f571:d3bd:53::53
+            iifname { "bond0.20", "bond0.40", "wg01" } ip daddr != @dns_vips meta l4proto { tcp, udp } th dport 53 counter dnat ip to 10.254.253.53
             # Management NTP interception applies to VLAN 100.
             iifname { "bond0.100", "bond0.10", "bond0.20", "bond0.40", "wg01" } ip daddr != 10.254.254.1 udp dport 123 counter dnat ip to 10.254.254.1
-            iifname "wan0" tcp dport 59453 counter dnat ip to 10.1.2.60:59453
             iifname "wan0" tcp dport 50413 counter dnat ip to 10.45.0.24:50413
           }
           chain postrouting {

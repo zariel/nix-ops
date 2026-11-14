@@ -10,6 +10,7 @@ pkgs.testers.runNixOSTest {
         ../systems/gateway/services.nix
         ../systems/gateway/firewall.nix
       ];
+      services.prometheus.exporters.node.enable = true;
       virtualisation.vlans = [ 1 ];
       virtualisation.memorySize = 1536;
       systemd.network.links."10-lan0".matchConfig = lib.mkForce { OriginalName = "eth1"; };
@@ -179,7 +180,7 @@ pkgs.testers.runNixOSTest {
           };
           "10-loopback" = {
             matchConfig.Name = "lo";
-            address = [ "172.53.53.53/32" ];
+            address = [ "10.254.253.53/32" ];
           };
         };
       };
@@ -196,7 +197,7 @@ pkgs.testers.runNixOSTest {
            neighbor 10.254.0.0 timers 1 3
            neighbor 10.254.0.8 timers 1 3
            address-family ipv4 unicast
-            network 172.53.53.53/32
+            network 10.254.253.53/32
            exit-address-family
           exit
         '';
@@ -205,7 +206,7 @@ pkgs.testers.runNixOSTest {
         wantedBy = [ "multi-user.target" ];
         requires = [ "systemd-networkd-wait-online@lo.service" ];
         after = [ "systemd-networkd-wait-online@lo.service" ];
-        serviceConfig.ExecStart = "${pkgs.python3}/bin/python3 -m http.server 53 --bind 172.53.53.53";
+        serviceConfig.ExecStart = "${pkgs.python3}/bin/python3 -m http.server 53 --bind 10.254.253.53";
       };
     };
     client = { ... }: {

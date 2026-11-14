@@ -82,7 +82,7 @@ def exchange(mac, extra=(), requested=None, client_id=b"gateway-test"):
         )
         assert socket.inet_ntoa(data[16:20]) == address
         assert options[3] == socket.inet_aton(prefix + ".1")
-        assert options[6] == socket.inet_aton("172.53.53.53")
+        assert options[6] == socket.inet_aton("10.254.253.53")
         assert options[1] == socket.inet_aton("255.255.255.0")
         lifetime = 3600 if zone == "guest" else 28800
         # Kea can reuse a lease with its remaining lifetime during this 180s test.
@@ -115,6 +115,10 @@ else:
         reserved_mac, [(93, b"\0\x07"), (77, b"iPXE")]
     )
     assert next_server == bytes(4) and bootfile == b""
+
+if zone == "lan":
+    exchange("bc:24:11:b4:9c:2c", requested="10.1.0.23")
+    exchange("00:0d:5d:09:27:b7", requested="10.1.0.31")
 
 # Controller discovery must be restricted to management clients identifying as ubnt.
 _, _, _, options = exchange(reserved_mac, [(60, b"ubnt")])
