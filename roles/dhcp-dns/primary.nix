@@ -78,8 +78,14 @@ in
   };
 
   systemd.services.bind = {
-    requires = [ "sops-install-secrets.service" ];
-    after = [ "sops-install-secrets.service" ];
+    requires = [
+      "sops-install-secrets.service"
+      "systemd-networkd-wait-online@lo.service"
+    ];
+    after = [
+      "sops-install-secrets.service"
+      "systemd-networkd-wait-online@lo.service"
+    ];
     serviceConfig = {
       LoadCredential = [ credential ];
       UMask = "0077";
@@ -124,7 +130,10 @@ in
     };
   };
   systemd.services.kea-dhcp-ddns-server = {
-    requires = [ "sops-install-secrets.service" ];
+    requires = [
+      "sops-install-secrets.service"
+      "systemd-networkd-wait-online@lo.service"
+    ];
     wants = [ "bind.service" ];
     after = [
       "sops-install-secrets.service"

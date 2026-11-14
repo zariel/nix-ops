@@ -1,5 +1,6 @@
 { config, lib, ... }:
 let
+  addresses = (import ../../roles/gateway-services/settings.nix).addresses;
   policy = import ./firewall-policy.nix { inherit lib; };
   inherit (policy) zones;
   renderRule = import ./firewall-rule.nix { inherit lib; };
@@ -169,7 +170,7 @@ in
             type nat hook prerouting priority dstnat; policy accept;
             iifname { "bond0.20", "bond0.40", "wg01" } ip daddr != @dns_vips meta l4proto { tcp, udp } th dport 53 counter dnat ip to 10.254.253.53
             # Management NTP interception applies to VLAN 100.
-            iifname { "bond0.100", "bond0.10", "bond0.20", "bond0.40", "wg01" } ip daddr != 10.254.254.1 udp dport 123 counter dnat ip to 10.254.254.1
+            iifname { "bond0.100", "bond0.10", "bond0.20", "bond0.40", "wg01" } ip daddr != ${addresses.ntp} udp dport 123 counter dnat ip to ${addresses.ntp}
             iifname "wan0" tcp dport 50413 counter dnat ip to 10.45.0.24:50413
           }
           chain postrouting {

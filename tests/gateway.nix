@@ -15,6 +15,8 @@ pkgs.testers.runNixOSTest {
     environment.etc."gateway-dhcp.py".source = ./gateway-dhcp.py;
     environment.etc."gateway-udp.py".source = ./gateway-udp.py;
     networking.useDHCP = false;
+    # Packet fixtures own mDNS sockets; production delegates these to Avahi.
+    services.resolved.settings.Resolve.MulticastDNS = false;
     boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
     boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
     boot.kernel.sysctl."net.ipv4.conf.all.rp_filter" = 0;
@@ -258,7 +260,7 @@ pkgs.testers.runNixOSTest {
     # TFTP data connections traverse the conntrack helper rather than opening
     # an ephemeral UDP range. Serve the boot asset from its native service.
     router.succeed("echo pxe-test > /var/lib/tftpboot/test; chmod 644 /var/lib/tftpboot/test")
-    router.succeed("ip netns exec trusted tftp -g -r test -l /tmp/tftp-result 10.254.254.1")
+    router.succeed("ip netns exec trusted tftp -g -r test -l /tmp/tftp-result 10.5.0.9")
     router.succeed("grep pxe-test /tmp/tftp-result")
     router.succeed("vtysh -c 'show bgp ipv4 unicast summary json' > /tmp/bgp.json")
     bgp = json.loads(router.succeed("cat /tmp/bgp.json"))

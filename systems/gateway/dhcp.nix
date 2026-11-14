@@ -5,13 +5,17 @@
 }:
 let
   reservations = import ./reservations.nix;
+  addresses = (import ../../roles/gateway-services/settings.nix).addresses;
   dns = import ../../roles/dhcp-dns/settings.nix { inherit lib; };
   subnets = dns.networks;
   interfaces = lib.mapAttrsToList (_: subnet: "bond0.${toString subnet.id}") subnets;
   networkReady = map (interface: "systemd-networkd-wait-online@${interface}.service") interfaces;
 in
 {
-  imports = [ ../../roles/dhcp-dns/primary.nix ];
+  imports = [
+    ../../roles/dhcp-dns/primary.nix
+    ./service-addresses.nix
+  ];
 
   services.kea.dhcp4 = {
     enable = true;
@@ -57,7 +61,7 @@ in
         {
           name = "ipxe";
           test = "member('servers') and (option[77].hex == 'iPXE' or option[77].hex == 0x0469505845)";
-          boot-file-name = "http://10.5.0.8/boot.ipxe";
+          boot-file-name = "http://${addresses.matchbox}/boot.ipxe";
         }
         {
           name = "efi";
@@ -67,13 +71,13 @@ in
         {
           name = "pxe-efi";
           test = "member('servers') and not member('ipxe') and member('efi')";
-          next-server = "10.1.1.1";
+          next-server = addresses.tftp;
           boot-file-name = "ipxe.efi";
         }
         {
           name = "pxe-bios";
           test = "member('servers') and not member('ipxe') and not member('efi')";
-          next-server = "10.1.1.1";
+          next-server = addresses.tftp;
           boot-file-name = "undionly.kpxe";
         }
         {
@@ -120,7 +124,7 @@ in
             ])
             {
               name = "ntp-servers";
-              data = "10.254.254.1";
+              data = addresses.ntp;
             }
         ++
           lib.optional
@@ -150,7 +154,11 @@ in
     enable = true;
     root = "/var/lib/tftpboot";
     # Use IPv4 packet metadata rather than IPv4-mapped IPv6 addresses.
-    extraOptions = [ "--bind-address 0.0.0.0" ];
+    extraOptions = [ "--bind-address ${addresses.tftp}" ];
+  };
+  systemd.services.atftpd = {
+    requires = [ "systemd-networkd-wait-online@lo.service" ];
+    after = [ "systemd-networkd-wait-online@lo.service" ];
   };
   systemd.tmpfiles.rules = [ "d /var/lib/tftpboot 0755 root root -" ];
 }

@@ -1,13 +1,21 @@
 { pkgs, ... }:
+let
+  addresses = (import ../../roles/gateway-services/settings.nix).addresses;
+in
 {
+  imports = [ ./service-addresses.nix ];
   services.frr = {
     bgpd.enable = true;
     pimd.enable = true;
     pim6d.enable = true;
     config = builtins.readFile ./frr.conf;
   };
-  services.prometheus.exporters.node.listenAddress = "10.254.254.1";
+  services.prometheus.exporters.node.listenAddress = addresses.metrics;
   # The exporter binds the loopback identity, which must exist before startup.
+  systemd.services.chronyd = {
+    requires = [ "systemd-networkd-wait-online@lo.service" ];
+    after = [ "systemd-networkd-wait-online@lo.service" ];
+  };
   systemd.services.prometheus-node-exporter = {
     requires = [ "systemd-networkd-wait-online@lo.service" ];
     after = [ "systemd-networkd-wait-online@lo.service" ];
@@ -25,7 +33,7 @@
       "3.uk.pool.ntp.org"
     ];
     extraConfig = ''
-      bindaddress 10.254.254.1
+      bindaddress ${addresses.ntp}
       allow 127.0.0.0/8
       allow 10.0.0.0/8
       allow 172.16.0.0/12

@@ -87,7 +87,7 @@ def exchange(mac, extra=(), requested=None, client_id=b"gateway-test"):
         lifetime = 3600 if zone == "guest" else 28800
         # Kea can reuse a lease with its remaining lifetime during this 180s test.
         assert lifetime - 180 <= struct.unpack("!I", options[51])[0] <= lifetime
-        assert options.get(42) == (socket.inet_aton("10.254.254.1") if ntp else None)
+        assert options.get(42) == (socket.inet_aton("10.5.0.10") if ntp else None)
         assert options.get(15) == (b"cbannister.casa" if domain else None)
         return address, data[20:24], data[108:236].rstrip(b"\0"), options
     finally:
@@ -99,10 +99,10 @@ exchange(reserved_mac, requested=reserved_ip)
 
 if zone == "servers":
     for arch, user_class, filename, server in [
-        (b"\0\0", None, b"undionly.kpxe", "10.1.1.1"),
-        (b"\0\x07", None, b"ipxe.efi", "10.1.1.1"),
-        (b"\0\x09", None, b"ipxe.efi", "10.1.1.1"),
-        (b"\0\0\0\x09", None, b"ipxe.efi", "10.1.1.1"),
+        (b"\0\0", None, b"undionly.kpxe", "10.5.0.9"),
+        (b"\0\x07", None, b"ipxe.efi", "10.5.0.9"),
+        (b"\0\x09", None, b"ipxe.efi", "10.5.0.9"),
+        (b"\0\0\0\x09", None, b"ipxe.efi", "10.5.0.9"),
         (b"\0\x07", b"iPXE", b"http://10.5.0.8/boot.ipxe", "0.0.0.0"),
         (b"\0\x09", b"\x04iPXE", b"http://10.5.0.8/boot.ipxe", "0.0.0.0"),
     ]:

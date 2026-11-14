@@ -58,7 +58,7 @@ pkgs.testers.runNixOSTest {
     router.wait_for_unit("matchbox.service")
     fabric.wait_for_unit("frr.service")
     router.succeed("ip link set eth1 name bond0.3001")
-    fabric.wait_until_succeeds("ip route show 10.5.0.8/32 | grep 'via 10.254.0.0'")
+    fabric.wait_until_succeeds("ip route show 10.5.0.0/26 | grep 'via 10.254.0.0'")
     router.succeed("ip -4 address show lo | grep '10.5.0.8/32'")
     router.wait_until_succeeds("curl -fsS --max-time 2 http://10.5.0.8/assets/probe | grep gateway-app-probe")
     router.fail("systemctl list-units --all --no-legend | grep container@")
@@ -84,16 +84,25 @@ pkgs.testers.runNixOSTest {
     pid = router.succeed("systemctl show matchbox -p MainPID --value").strip()
     router.fail(f"nsenter -t {pid} -m -- touch /var/lib/matchbox/forbidden")
 
-    # Address ownership outlives a process restart; withdrawing the address
-    # withdraws the BGP route through the same native connected-route primitive.
+    # The host block survives an application restart and individual address loss.
     router.succeed("systemctl stop matchbox")
-    fabric.succeed("ip route show 10.5.0.8/32 | grep 'via 10.254.0.0'")
+    fabric.succeed("ip route show 10.5.0.0/26 | grep 'via 10.254.0.0'")
     router.succeed("systemctl start matchbox")
     router.wait_until_succeeds("curl -fsS --max-time 2 http://10.5.0.8/assets/probe | grep gateway-app-probe")
     router.succeed("ip addr del 10.5.0.8/32 dev lo")
-    fabric.wait_until_fails("ip route show 10.5.0.8/32 | grep 'via 10.254.0.0'")
+    fabric.succeed("ip route show 10.5.0.0/26 | grep 'via 10.254.0.0'")
     router.succeed("networkctl reconfigure lo")
-    fabric.wait_until_succeeds("ip route show 10.5.0.8/32 | grep 'via 10.254.0.0'")
     router.wait_until_succeeds("curl -fsS --max-time 2 http://10.5.0.8/assets/probe | grep gateway-app-probe")
+
+    # Unallocated addresses terminate here; the summary is not a connected LAN.
+    router.succeed("ip route show 10.5.0.0/26 | grep '^unreachable '")
+    router.fail("ip route get 10.5.0.62")
+    fabric.succeed("ip route show 10.5.0.0/26 | grep 'via 10.254.0.0'")
+    fabric.succeed("test -z \"$(ip route show 10.5.0.8/32)\"")
+    # Removing the owned summary withdraws it, even though local /32s remain.
+    router.succeed("ip route del unreachable 10.5.0.0/26")
+    fabric.wait_until_fails("ip route show 10.5.0.0/26 | grep 'via 10.254.0.0'")
+    router.succeed("networkctl reconfigure lo")
+    fabric.wait_until_succeeds("ip route show 10.5.0.0/26 | grep 'via 10.254.0.0'")
   '';
 }

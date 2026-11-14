@@ -19,6 +19,18 @@ units = [
 ]
 for unit in units:
     gateway.wait_for_unit(unit + ".service")
+# Observe bound sockets so a wildcard listener cannot satisfy endpoint checks.
+listeners = gateway.succeed("ss -H -lntup").splitlines()
+for process, port, expected in (
+    ("matchbox", 80, {"10.5.0.8:80"}),
+    ("atftpd", 69, {"10.5.0.9:69"}),
+    ("chronyd", 123, {"10.5.0.10:123"}),
+    ("node_exporter", 9100, {"10.5.0.11:9100"}),
+    ("named", 53, {"127.0.0.1:53", "10.5.0.53:53"}),
+):
+    actual = {line.split()[4] for line in listeners if f'("{process}",' in line and line.split()[4].endswith(f":{port}")}
+    assert actual == expected, (process, actual, expected)
+
 gateway.wait_until_succeeds("ip -4 addr show dev wan0 | grep '198.18.0.'")
 gateway.wait_until_succeeds("ip route show default | grep 'via 198.18.0.1 dev wan0'")
 gateway.succeed("test -s /var/lib/frr/pimd.db; hostname -s | grep -x gateway")
@@ -27,13 +39,13 @@ gateway.wait_until_succeeds("ip route get 10.45.0.2 | grep 'via 10.254.0.1'")
 lan.succeed("ip netns add trusted; ip link add peer link eth1 type vlan id 20; ip link set peer netns trusted; ip -n trusted link set lo up; ip -n trusted link set peer up; ip -n trusted addr add 10.1.2.10/24 dev peer; ip -n trusted route add default via 10.1.2.1")
 lan.wait_until_succeeds("ip netns exec trusted curl -fsS --max-time 2 http://10.5.0.8/assets/probe | grep hardened-boot-assets")
 lan.succeed("ip netns exec trusted python /etc/gateway-dhcp.py trusted")
-lan.succeed("ip netns exec trusted tftp -g -r probe -l /tmp/tftp-probe 10.254.254.1; grep hardened-tftp /tmp/tftp-probe")
-_, upload_output = lan.execute("ip netns exec trusted tftp -p -l /tmp/tftp-probe -r forbidden 10.254.254.1 2>&1")
+lan.succeed("ip netns exec trusted tftp -g -r probe -l /tmp/tftp-probe 10.5.0.9; grep hardened-tftp /tmp/tftp-probe")
+_, upload_output = lan.execute("ip netns exec trusted tftp -p -l /tmp/tftp-probe -r forbidden 10.5.0.9 2>&1")
 assert "server error:" in upload_output, upload_output
 gateway.fail("test -e /var/lib/tftpboot/forbidden")
 
-lan.succeed("ip netns exec trusted python -c " + shlex.quote('import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(3); s.sendto(bytes([0x23])+bytes(47),("10.254.254.1",123)); response=s.recv(512); assert len(response)>=48 and response[0]&7==4'))
-gateway.succeed('curl -fsS http://10.254.254.1:9100/metrics | grep "^node_timex_offset_seconds"')
+lan.succeed("ip netns exec trusted python -c " + shlex.quote('import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.settimeout(3); s.sendto(bytes([0x23])+bytes(47),("10.5.0.10",123)); response=s.recv(512); assert len(response)>=48 and response[0]&7==4'))
+gateway.succeed('curl -fsS http://10.5.0.11:9100/metrics | grep "^node_timex_offset_seconds"')
 
 # Verify the live process identity and mount protections through the kernel.
 for unit in ("atftpd", "syslog"):

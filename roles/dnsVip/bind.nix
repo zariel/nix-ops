@@ -10,6 +10,7 @@ with lib;
 let
   cfg = config.services.dnsVip;
   gatewayAddress = import ./gateway-address.nix;
+  gatewayServices = (import ../gateway-services/settings.nix).addresses;
   dns = import ../dhcp-dns/settings.nix { inherit lib; };
   bindZoneChecks = attrsets.mapAttrsToList (
     zoneName: zoneCfg: "${pkgs.bind}/bin/named-checkzone ${zoneName} ${zoneCfg.file}"
@@ -42,7 +43,7 @@ in
         "10.1.3.0/24" # IOT
         "10.1.4.0/24" # ROON
         "192.168.2.0/24" # GUEST
-        "10.5.0.0/24" # VYOS CONTAINERS
+        "10.5.0.0/16" # Host-owned services
         "10.254.0.0/16" # L3 servers
       ];
 
@@ -65,9 +66,24 @@ in
         "cbannister.casa" = {
           master = true;
           file = pkgs.writeText "db.cbannister.casa" (
-            builtins.replaceStrings [ "@GATEWAY_ADDRESS@" ] [ gatewayAddress ] (
-              builtins.readFile ./files/bind/zones/db.cbannister.casa
-            )
+            builtins.replaceStrings
+              [
+                "@GATEWAY_ADDRESS@"
+                "@GATEWAY_NTP@"
+                "@GATEWAY_TFTP@"
+                "@GATEWAY_METRICS@"
+                "@GATEWAY_DHCP_DNS@"
+                "@GATEWAY_MATCHBOX@"
+              ]
+              [
+                gatewayAddress
+                gatewayServices.ntp
+                gatewayServices.tftp
+                gatewayServices.metrics
+                gatewayServices.dhcpDns
+                gatewayServices.matchbox
+              ]
+              (builtins.readFile ./files/bind/zones/db.cbannister.casa)
           );
         };
 

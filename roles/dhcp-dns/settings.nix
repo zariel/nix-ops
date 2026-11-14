@@ -31,7 +31,7 @@ in
 {
   inherit networks domain reverseZones;
   zones = [ domain ] ++ reverseZones;
-  primary = "10.254.254.1";
+  primary = (import ../gateway-services/settings.nix).addresses.dhcpDns;
   replicas = [
     "10.254.53.0"
     "10.254.53.2"

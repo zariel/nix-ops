@@ -18,7 +18,7 @@ primary on the shared network; they must not run with the same node address.
 ## Ownership and maintenance
 
 - systemd-networkd owns physical links, the LACP bond, VLANs, WireGuard, WAN DHCP,
-  IPv6 advertisements, and the Matchbox service address on loopback.
+  IPv6 advertisements, and the dedicated service addresses on loopback.
   Networkd configures links independently of application readiness.
 - FRR owns BGP, PIM/IGMP/MLD and the static reject route. Networkd learns the Thread
   OMR route from OTBR and leaves foreign routes, nexthops and policy rules alone. There is no OSPF in
@@ -36,9 +36,10 @@ primary on the shared network; they must not run with the same node address.
 - Chrony, Avahi, node-exporter, FRR and Matchbox 0.11.0 run as native systemd
   services. There are no application containers on this gateway. UniFi OS Server
   runs separately on pve2 VM 203 at `10.1.0.23`.
-- Networkd owns Matchbox's loopback address `10.5.0.8/32`. FRR originates this
-  exact prefix through the ICX while the address exists. Restarting Matchbox
-  does not change routing; removing the address withdraws its advertisement.
+- Networkd owns the application's `/32` addresses on loopback and an unreachable
+  summary route for `10.5.0.0/26`. FRR announces that host block through the ICX.
+  Application restarts and removal of one address do not withdraw other services;
+  removal of the summary route withdraws the block.
 - Matchbox serves only `10.5.0.8:80`, as the unprivileged `matchbox` user.
   Its private mount namespace exposes the boot data read-only. The firewall
   allows HTTP from trusted, servers, management and IoT, and permits only
@@ -51,6 +52,41 @@ UniFi discovery options. No SQL database or HTTP control API is enabled.
 `services.atftpd` serves the boot assets from `/var/lib/tftpboot`.
 Kea waits for its five LAN interfaces through networkd's per-interface readiness
 units; it does not wait for the WAN or unused ports.
+
+## Host service addresses
+
+The [site host-service policy](https://github.com/zariel/home-ops/blob/main/docs/host-services.md)
+reserves `10.5.0.0/16` for host-owned services, with one `/26` per host.
+NetBox holds the gateway's reserved `10.5.0.0/26` block. The settings in
+`roles/gateway-services/settings.nix` feed listeners, DHCP options, DNS records
+and firewall destinations. The BGP `network` statement advertises this `/26`;
+the entire `/16` is not originated. Unallocated addresses in the block hit its
+unreachable route instead of following the WAN default.
+
+| Service | Dedicated address | DNS name |
+| --- | --- | --- |
+| Matchbox | `10.5.0.8` | `matchbox.cbannister.casa` |
+| TFTP | `10.5.0.9` | `gateway-tftp.cbannister.casa` |
+| NTP | `10.5.0.10` | `gateway-ntp.cbannister.casa` |
+| Node exporter | `10.5.0.11` | `gateway-metrics.cbannister.casa` |
+| DHCP DNS primary | `10.5.0.53` | `gateway-dhcp-dns.cbannister.casa` |
+
+Router identity `10.254.254.1`, the core BGP link `10.254.0.0/31`, SSH/SFTP
+management access and trusted VRRP keep their existing addresses. DHCP broadcast,
+mDNS and the WireGuard WAN listener retain their protocol-specific attachments.
+The shared resolver VIP `10.254.253.53` stays on the independent DNS hosts.
+
+Changes are staged across `../vyos-config`, this gateway branch and `../home-ops`.
+VyOS gains compatibility listeners before clients switch; its container bridge
+and BGP announcement shrink to `/26`. NixOS serves only the dedicated endpoints.
+Deploy the new service DNS records before updating the metrics target, and migrate
+NTP/PXE clients before cutover. The canonical policy documents ordering, rollback,
+NetBox activation and the legacy `/24` hold. The service-address migration was
+rolled out on VyOS on 2026-11-14, together with the three DNS VMs, Kubernetes
+NTP/metrics consumers and Beefchunk's NTP client. VyOS advertises the `/26` and
+retains compatibility endpoints; NetBox reflects the verified live addresses.
+The native NixOS gateway, its systemd hardening and DHCP DNS primary still require
+the separate OS installation and cutover described below.
 
 ## Service isolation and resource limits
 
@@ -131,7 +167,7 @@ References: [systemd execution restrictions](https://www.freedesktop.org/softwar
 
 The gateway is the writable primary for `dhcp.cbannister.casa` and the reverse
 zones of its five DHCPv4 networks. Kea D2 submits authenticated updates over
-loopback. Each DNS VM transfers these zones from `10.254.254.1` and answers
+loopback. Each DNS VM transfers these zones from `10.5.0.53` and answers
 queries from its local persistent copy. DHCP advertises `10.254.253.53`;
 direct access to `172.53.53.53` remains permitted during migration.
 Static `cbannister.casa` and `unifi` forward zones remain managed independently
@@ -374,7 +410,7 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   the fixed snapshot in `geoip-cn-ru.nft`; refresh it deliberately from a trusted source.
 - Avahi multicast queries may use ephemeral source ports. UDP replies from 5353
   to unprivileged client ports are allowed in both directions on reflector LANs.
-- Node exporter listens only on `10.254.254.1`. Routed pod access includes PDU
+- Node exporter listens only on `10.5.0.11`. Routed pod access includes PDU
   and IPMI HTTPS certificate uploads and the existing Proxmox management ports.
 - The pinned kernel is 6.18.63, newer than the 6.18.56 fix for
   [CVE-2026-98432](https://kernel.googlesource.com/pub/scm/linux/security/vulns/+/refs/heads/master/cve/published/2026/CVE-2026-98432.mbox).
@@ -391,7 +427,7 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   `container@matchbox` and any legacy `podman-*` application units. The native
   service uses the same host data path. Remove unused container/Podman netdevs
   during maintenance; networkd does not delete removed netdevs. Verify the exact
-  `10.5.0.8/32` route on the ICX and inspect `systemctl status matchbox`.
+  `10.5.0.0/26` route on the ICX and inspect `systemctl status matchbox`.
 
 ## Installation and state transfer
 
@@ -518,7 +554,8 @@ VyOS applies its configuration. The hook's original copy is in the recovery
 directory. Other gateway containers were not restarted.
 
 After verifying migration to `10.1.0.23`, retire the old VyOS controller.
-The NixOS gateway has no UniFi application or route for `10.5.0.10`.
+The NixOS gateway has no UniFi application. The retired controller address
+`10.5.0.10` is reused by NTP; the current UniFi server is `10.1.0.23`.
 
 References: [networkctl reload](https://www.freedesktop.org/software/systemd/man/latest/networkctl.html),
 [netdev lifecycle](https://www.freedesktop.org/software/systemd/man/latest/systemd.netdev.html),

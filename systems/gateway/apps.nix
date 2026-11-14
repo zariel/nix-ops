@@ -4,7 +4,11 @@
   pkgs,
   ...
 }:
+let
+  addresses = (import ../../roles/gateway-services/settings.nix).addresses;
+in
 {
+  imports = [ ./service-addresses.nix ];
   users.users.matchbox = {
     isSystemUser = true;
     group = "matchbox";
@@ -12,20 +16,13 @@
   users.groups.matchbox = { };
   users.groups.matchbox-assets.members = lib.optional (config.users.users ? chris) "chris";
 
-  systemd.network = {
-    enable = true;
-    networks."10-loopback" = {
-      matchConfig.Name = "lo";
-      address = [ "10.5.0.8/32" ];
-    };
-  };
   systemd.services.matchbox = {
     description = "Matchbox network boot assets";
     wantedBy = [ "multi-user.target" ];
     requires = [ "systemd-networkd-wait-online@lo.service" ];
     after = [ "systemd-networkd-wait-online@lo.service" ];
     serviceConfig = (import ./sandbox.nix) // {
-      ExecStart = "${pkgs.matchbox-server}/bin/matchbox -address=10.5.0.8:80 -log-level=info";
+      ExecStart = "${pkgs.matchbox-server}/bin/matchbox -address=${addresses.matchbox}:80 -log-level=info";
       User = "matchbox";
       Group = "matchbox";
       WorkingDirectory = "/var/lib/matchbox";

@@ -23,6 +23,12 @@ let
     systemd.network.networks."10-test" = {
       matchConfig.Name = "eth1";
       address = [ "${builtins.elemAt dns.replicas index}/16" ];
+      routes = [
+        {
+          Destination = "10.5.0.0/26";
+          Gateway = "10.254.254.1";
+        }
+      ];
     };
     environment.systemPackages = [ pkgs.dnsutils ];
     virtualisation.memorySize = 512;
@@ -85,6 +91,8 @@ pkgs.testers.runNixOSTest {
     for node in replicas:
         node.wait_for_unit("dnsdist.service")
         answer(node, "gateway.cbannister.casa A", "10.254.254.1")
+        answer(node, "gateway-metrics.cbannister.casa A", "10.5.0.11")
+        answer(node, "gateway-ntp.cbannister.casa A", "10.5.0.10")
 
     # Reservation names take precedence over client input; anonymous leases get
     # names too. All five production subnets must publish forward and PTR data.

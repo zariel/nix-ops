@@ -149,7 +149,7 @@ Key points:
   - Reverse zones for `10.1.0.0/24`, `10.1.1.0/24`, `10.1.2.0/24`,
     `10.1.3.0/24` and `192.168.2.0/24` (secondaries)
 
-The gateway runs the writable BIND primary for DHCP zones at `10.254.254.1`.
+The gateway runs the writable BIND primary for DHCP zones at `10.5.0.53`.
 Kea D2 updates it using a SOPS-managed local TSIG credential. Each DNS VM stores its secondary
 zones and journals under `/var/lib/bind` and answers locally. Queries are not
 forwarded to the gateway. During a gateway outage, each VM can continue serving

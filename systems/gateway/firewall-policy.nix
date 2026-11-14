@@ -1,5 +1,6 @@
 { lib }:
 let
+  addresses = (import ../../roles/gateway-services/settings.nix).addresses;
   dhcpDns = import ../../roles/dhcp-dns/settings.nix { inherit lib; };
   inherit (import ./firewall-helpers.nix)
     addressSet
@@ -57,6 +58,7 @@ let
     comment = "SSH";
   };
   tftp = udp {
+    daddr = addresses.tftp;
     dport = 69;
     comment = "TFTP";
   };
@@ -73,7 +75,7 @@ let
     comment = "DNS";
   };
   ntp4 = udp {
-    daddr = "10.254.254.1";
+    daddr = addresses.ntp;
     dport = 123;
     comment = "NTP";
   };
@@ -136,7 +138,7 @@ in
       "10.1.2.15"
       "10.1.1.31"
       "10.1.1.41"
-      "10.254.254.1"
+      addresses.metrics
       "10.1.1.155"
       "10.1.2.16"
       "10.1.1.32"
@@ -190,7 +192,7 @@ in
     guest.to.wan = [ accept ];
     iot.to.local = [
       (tcp {
-        daddr = "10.5.0.8";
+        daddr = addresses.matchbox;
         dport = 80;
         comment = "PXE boot assets";
       })
@@ -249,7 +251,7 @@ in
     ];
     lan.to.local = [
       (tcp {
-        daddr = "10.5.0.8";
+        daddr = addresses.matchbox;
         dport = 80;
         comment = "PXE boot assets";
       })
@@ -400,7 +402,7 @@ in
     ];
     servers.to.local = [
       (tcp {
-        daddr = "10.5.0.8";
+        daddr = addresses.matchbox;
         dport = 80;
         comment = "PXE boot assets";
       })
@@ -497,7 +499,7 @@ in
         comment = "Host metrics";
       })
       (udp {
-        daddr = "10.254.254.1";
+        daddr = addresses.tftp;
         dport = 69;
         saddr = "10.254.0.0/24";
         comment = "TFTP";
@@ -590,7 +592,7 @@ in
     trusted.to.lan = [ accept ];
     trusted.to.local = [
       (tcp {
-        daddr = "10.5.0.8";
+        daddr = addresses.matchbox;
         dport = 80;
         comment = "PXE boot assets";
       })
