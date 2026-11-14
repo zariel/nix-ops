@@ -104,7 +104,9 @@ in
     Service = {
       ExecStart = "${pkgs.lib.getExe config.programs.codex.package} app-server --listen unix://";
       WorkingDirectory = home;
-      Environment = [ "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin" ];
+      Environment = [
+        "PATH=/run/wrappers/bin:${config.home.profileDirectory}/bin:/run/current-system/sw/bin"
+      ];
       Restart = "on-failure";
       RestartSec = 2;
       # Let the server shut down its workers before systemd kills remaining children.
