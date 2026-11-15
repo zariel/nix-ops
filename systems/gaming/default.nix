@@ -560,6 +560,11 @@ in
     platformio-core.udev
   ];
   services.udev.extraRules = ''
+    # Switching the KVM back reconnects its USB keyboard and mouse even when
+    # the suspended GPU misses DisplayPort hotplug. Probe from the user session.
+    ACTION=="add", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_BUS}=="usb", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="systemd", ENV{SYSTEMD_USER_WANTS}+="gaming-display-wake.service"
+    ACTION=="add", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_BUS}=="usb", ENV{ID_INPUT_MOUSE}=="1", TAG+="systemd", ENV{SYSTEMD_USER_WANTS}+="gaming-display-wake.service"
+
     # The TP-Link UB600's Realtek controller can stop responding to LE scan
     # commands after runtime suspend, preventing bonded devices from reconnecting.
     ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="37ad", ATTR{idProduct}=="0600", TEST=="power/control", ATTR{power/control}="on"

@@ -167,6 +167,7 @@ in
           Mod+Shift+N { spawn "${pkgs.swaynotificationcenter}/bin/swaync-client" "-d" "-sw"; }
           Mod+Ctrl+N allow-inhibiting=false repeat=false { spawn "night-light" "toggle"; }
           Mod+Alt+L { spawn-sh "${lockCommand}"; }
+          Mod+Ctrl+Shift+P allow-when-locked=true allow-inhibiting=false repeat=false { spawn "wake-displays"; }
           Mod+Shift+E { spawn "${powerMenu}/bin/power-menu"; }
           Mod+Ctrl+Shift+E { quit; }
 

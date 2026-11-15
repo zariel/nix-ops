@@ -1,6 +1,7 @@
 { pkgs, lib, ... }:
 let
   lockCommand = "${pkgs.systemd}/bin/systemctl --user start niri-lock.service";
+  wakeDisplays = pkgs.callPackage ../pkgs/wake-displays.nix { };
   powerMenu = import ./power-menu.nix { inherit pkgs; };
   swayosd = pkgs.swayosd.overrideAttrs (old: {
     patches = (old.patches or [ ]) ++ [ ./swayosd-top-right.patch ];
@@ -372,6 +373,7 @@ let
 in
 {
   home.packages = with pkgs; [
+    wakeDisplays
     powerMenu
     xwayland-satellite
     pavucontrol
@@ -853,9 +855,16 @@ in
     enable = true;
     events = {
       before-sleep = lockCommand;
+      after-resume = "${wakeDisplays}/bin/wake-displays";
       lock = lockCommand;
     };
     timeouts = [
+      {
+        # Recheck missing displays on input, including while the session is locked.
+        timeout = 5;
+        command = "true";
+        resumeCommand = "${wakeDisplays}/bin/wake-displays --if-disconnected";
+      }
       {
         timeout = 900;
         command = lockCommand;
@@ -863,7 +872,21 @@ in
       {
         timeout = 1200;
         command = "${pkgs.niri}/bin/niri msg action power-off-monitors";
+        resumeCommand = "${wakeDisplays}/bin/wake-displays";
       }
     ];
+  };
+
+  systemd.user.services.gaming-display-wake = {
+    Unit = {
+      Description = "Wake and probe displays after KVM input reconnects";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+      ConditionEnvironment = "NIRI_SOCKET";
+    };
+    Service = {
+      Type = "oneshot";
+      ExecStart = "${wakeDisplays}/bin/wake-displays";
+    };
   };
 }
