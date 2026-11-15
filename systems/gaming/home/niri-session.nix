@@ -60,7 +60,7 @@ in
       input {
           keyboard {
               xkb {
-                  layout "us"
+                  layout "gb"
                   variant ""
               }
           }

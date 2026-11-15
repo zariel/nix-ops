@@ -283,13 +283,13 @@ in
 
   # Configure keymap in X11
   services.xserver.xkb = {
-    layout = lib.mkForce "us";
+    layout = lib.mkForce "gb";
     variant = "";
     model = "pc105";
   };
 
   # Configure console keymap
-  console.keyMap = lib.mkForce "us";
+  console.keyMap = lib.mkForce "uk";
 
   # Enable CUPS to print documents.
   services.printing.enable = true;
