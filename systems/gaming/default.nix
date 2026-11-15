@@ -291,6 +291,16 @@ in
   # Configure console keymap
   console.keyMap = lib.mkForce "uk";
 
+  services.kmscon = {
+    enable = true;
+    useXkbConfig = true;
+    config = {
+      font-name = "JetBrainsMono Nerd Font";
+      font-size = 24;
+      sb-size = 10000;
+    };
+  };
+
   # Enable CUPS to print documents.
   services.printing.enable = true;
   hardware.printers = {
