@@ -636,6 +636,20 @@ in
       command = lib.getExe pkgs.playwright-mcp;
     };
 
+    mcp_servers.grafana = {
+      url = "https://grafana-mcp.cbannister.xyz/mcp";
+      scopes = [
+        "openid"
+        "grafana:access"
+        "offline_access"
+      ];
+      oauth = {
+        client_id = "grafana-mcp-codex";
+        callback_url = "http://127.0.0.1:4321/callback";
+        callback_port = 4321;
+      };
+    };
+
     mcp_servers.home-assistant = {
       url = "https://home-assistant-mcp.cbannister.xyz/mcp";
       scopes = [
