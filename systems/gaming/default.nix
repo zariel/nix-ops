@@ -632,65 +632,7 @@ in
     personality = "pragmatic";
     approvals_reviewer = "auto_review";
 
-    mcp_servers.playwright = {
-      command = lib.getExe pkgs.playwright-mcp;
-    };
-
-    mcp_servers.grafana = {
-      url = "https://grafana-mcp.cbannister.xyz/mcp";
-      scopes = [
-        "openid"
-        "grafana:access"
-        "offline_access"
-      ];
-      oauth = {
-        client_id = "grafana-mcp-codex";
-        callback_url = "http://127.0.0.1:4321/callback";
-        callback_port = 4321;
-      };
-    };
-
-    mcp_servers.home-assistant = {
-      url = "https://home-assistant-mcp.cbannister.xyz/mcp";
-      scopes = [
-        "openid"
-        "home-assistant:access"
-        "offline_access"
-      ];
-      oauth = {
-        client_id = "home-assistant-mcp-codex";
-        callback_url = "http://127.0.0.1:4321/callback";
-        callback_port = 4321;
-      };
-    };
-
-    mcp_servers.netbox = {
-      url = "https://netbox-mcp.cbannister.xyz/mcp";
-      scopes = [
-        "openid"
-        "netbox:access"
-        "offline_access"
-      ];
-      oauth = {
-        client_id = "netbox-mcp-codex";
-        callback_url = "http://127.0.0.1:4321/callback";
-        callback_port = 4321;
-      };
-    };
-
-    mcp_servers.unifi = {
-      url = "https://unifi-mcp.cbannister.xyz/mcp";
-      scopes = [
-        "openid"
-        "unifi:access"
-        "offline_access"
-      ];
-      oauth = {
-        client_id = "unifi-mcp-codex";
-        callback_url = "http://127.0.0.1:4321/callback";
-        callback_port = 4321;
-      };
-    };
+    mcp_servers = (import ./mcp-servers.nix { inherit lib pkgs; }).codex;
 
     features = {
       multi_agent = true;
