@@ -15,6 +15,16 @@ let
 
   beadsPackage = llmAgentPackages.beads;
 
+  # Instructions and skills shared by the coding agents.
+  agentConfig = {
+    skills = {
+      draft-commit = ./apps/codex/skills/draft-commit.md;
+      socratic-tutor = "${janestreet-agent-skills}/socratic-tutor";
+      technical-doc-writer = ./apps/codex/skills/technical-doc-writer;
+    };
+    context = builtins.readFile ./apps/codex/context.md;
+  };
+
   formatCommitMessage = pkgs.callPackage ../pkgs/format-commit-message.nix { };
 
   bd = pkgs.writeShellApplication {
@@ -83,15 +93,32 @@ in
     };
   };
 
+  programs.claude-code = {
+    enable = true;
+    package = llmAgentPackages.claude-code;
+    inherit (agentConfig) context;
+    skills = {
+      inherit (agentConfig.skills) socratic-tutor;
+    };
+    mcpServers = (import ../mcp-servers.nix { inherit lib pkgs; }).claude-code;
+    # Merge into the existing settings so changes made through /config persist.
+    mutableSettings = true;
+    settings = {
+      effortLevel = "high";
+      permissions.defaultMode = "auto";
+      spinnerTipsEnabled = false;
+      attribution = {
+        commit = "";
+        pr = "";
+        sessionUrl = false;
+      };
+    };
+  };
+
   programs.codex = {
     enable = true;
     package = codex-cli-nix.packages.${pkgs.stdenv.hostPlatform.system}.default;
-    skills = {
-      draft-commit = ./apps/codex/skills/draft-commit.md;
-      socratic-tutor = "${janestreet-agent-skills}/socratic-tutor";
-      technical-doc-writer = ./apps/codex/skills/technical-doc-writer;
-    };
-    context = builtins.readFile ./apps/codex/context.md;
+    inherit (agentConfig) skills context;
   };
 
   systemd.user.services.codex-app-server = {

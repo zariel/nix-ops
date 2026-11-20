@@ -46,4 +46,25 @@ in
     else
       server
   ) servers;
+
+  # Claude Code redirects to http://localhost:<callbackPort>/callback.
+  claude-code = lib.mapAttrs (
+    _: server:
+    {
+      type = if server ? url then "http" else "stdio";
+    }
+    // (
+      if isPocketId server then
+        {
+          inherit (server) url;
+          oauth = {
+            inherit (server) clientId;
+            inherit callbackPort;
+            scopes = lib.concatStringsSep " " server.scopes;
+          };
+        }
+      else
+        server
+    )
+  ) servers;
 }
