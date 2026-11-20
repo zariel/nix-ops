@@ -12,6 +12,21 @@
     mpv.enable = true;
     yazi.enable = true;
     zathura.enable = true;
+
+    kvantum = {
+      enable = true;
+      flavor = "mocha";
+      accent = "mauve";
+    };
+  };
+
+  qt = {
+    enable = true;
+    platformTheme = {
+      name = "kde";
+      package = pkgs.kdePackages.plasma-integration;
+    };
+    style.name = "kvantum";
   };
 
   gtk.enable = true;

@@ -250,14 +250,14 @@ in
     priority = 100;
   };
 
-  # Enable the KDE Plasma Desktop Environment.
   # Default normal interactive logins to Niri managed by UWSM.
   services.displayManager.defaultSession = "niri-uwsm";
   services.displayManager.sddm = {
     enable = true;
     wayland.enable = true; # Enable Wayland for better VRR support
+    # Match Niri's scale on the 4K monitor.
+    settings.General.GreeterEnvironment = "QT_SCALE_FACTOR=1.5";
   };
-  services.desktopManager.plasma6.enable = true;
   catppuccin = {
     autoEnable = true;
     enable = true;
@@ -282,7 +282,7 @@ in
   programs.xwayland.enable = true;
 
   environment.etc."xdg/menus/niri-session-applications.menu".source =
-    "${pkgs.kdePackages.plasma-workspace}/etc/xdg/menus/plasma-applications.menu";
+    "${pkgs.lxmenu-data}/etc/xdg/menus/lxde-applications.menu";
 
   # Configure keymap in X11
   services.xserver.xkb = {
@@ -365,8 +365,14 @@ in
     ];
     shell = pkgs.fish;
     packages = with pkgs; [
+      kdePackages.ark
+      kdePackages.dolphin
+      kdePackages.dolphin-plugins
+      kdePackages.gwenview
       kdePackages.kate
       kdePackages.kalk
+      kdePackages.kio-extras
+      kdePackages.okular
       #  thunderbird
     ];
   };
@@ -451,18 +457,6 @@ in
   # Home Manager provides the session SSH agent.
   services.gnome.gcr-ssh-agent.enable = false;
 
-  xdg.portal = {
-    enable = true;
-    config = {
-      kde.default = [
-        "kde"
-      ];
-      plasma.default = [
-        "kde"
-      ];
-    };
-  };
-
   hardware.graphics = {
     enable = lib.mkDefault true;
     enable32Bit = lib.mkDefault true;
@@ -526,11 +520,7 @@ in
     # qmk
     qmk-udev-rules
     xwayland-satellite
-    (catppuccin-kde.override {
-      flavour = [ "mocha" ];
-      accents = [ "mauve" ];
-      winDecStyles = [ "modern" ];
-    })
+    lxmenu-data
     # flint
     bluez
 

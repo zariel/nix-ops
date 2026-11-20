@@ -43,7 +43,6 @@ in
     ./default-apps.nix
     ./desktop-shell.nix
     ./gaming.nix
-    ./kde.nix
     ./night-light.nix
     ./niri-session.nix
   ];
