@@ -39,8 +39,6 @@ in
     consoleLogLevel = 3;
     kernelPackages = pkgs.linuxPackages_latest;
     kernelParams = [
-      "intel_idle.max_cstate=1"
-      "processor.max_cstate=1"
       "split_lock_detect=off"
       # "amdgpu.freesync_video=1" # Enable FreeSync for video playback
       # "amdgpu.dc=1" # Explicitly enable Display Core (required for DSC)
@@ -55,6 +53,7 @@ in
       # display manager where the AMD driver supports it.
       "amdgpu.seamless=1"
       "intel_iommu=on"
+      "pcie_aspm.policy=powersupersave"
 
       # disable NVME power saving
       # "nvme_core.default_ps_max_latency_us=0"
@@ -71,6 +70,9 @@ in
   };
 
   hardware.cpu.intel.updateMicrocode = true;
+
+  # Keep CPU governor/EPP management independent of the desktop session.
+  services.power-profiles-daemon.enable = true;
 
   nix = {
     distributedBuilds = true;
