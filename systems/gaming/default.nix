@@ -498,6 +498,7 @@ in
     btop
     iotop
     lm_sensors
+    openrgb
     pciutils
     linux-firmware
     file
@@ -557,6 +558,7 @@ in
   };
 
   services.udev.packages = with pkgs; [
+    openrgb
     via
     vial
     qmk-udev-rules
