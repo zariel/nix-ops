@@ -38,6 +38,7 @@ in
 
     consoleLogLevel = 3;
     kernelPackages = pkgs.linuxPackages_latest;
+    kernelModules = [ "nct6775" ];
     kernelParams = [
       "split_lock_detect=off"
       # "amdgpu.freesync_video=1" # Enable FreeSync for video playback
