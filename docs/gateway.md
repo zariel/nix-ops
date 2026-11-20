@@ -411,7 +411,11 @@ an outage for its initial OS replacement and eventual kernel maintenance.
 - Avahi multicast queries may use ephemeral source ports. UDP replies from 5353
   to unprivileged client ports are allowed in both directions on reflector LANs.
 - Node exporter listens only on `10.5.0.11`. Routed pod access includes PDU
-  and IPMI HTTPS certificate uploads and the existing Proxmox management ports.
+  and IPMI HTTPS certificate uploads, UniFi controller HTTPS at `10.1.0.23` and
+  the existing Proxmox management ports.
+- IPv4 PIM is passive on trusted and IoT, matching VyOS: FRR remains the IGMP
+  querier without PIM neighbor discovery. There are no PIM neighbors, and the
+  output policy does not permit PIM control traffic in any case.
 - The pinned kernel is 6.18.63, newer than the 6.18.56 fix for
   [CVE-2026-98432](https://kernel.googlesource.com/pub/scm/linux/security/vulns/+/refs/heads/master/cve/published/2026/CVE-2026-98432.mbox).
   VyOS's temporary IPv4-options mitigation is therefore unnecessary here.

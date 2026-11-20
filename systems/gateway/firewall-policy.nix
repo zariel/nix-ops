@@ -460,6 +460,12 @@ in
         dport = 443;
         comment = "PDU certificates";
       })
+      (tcp {
+        saddr = setRef "transit_pods";
+        daddr = "10.1.0.23";
+        dport = 443;
+        comment = "UniFi controller";
+      })
       icmp4
       (udp {
         daddr = setRef "snmp_targets";

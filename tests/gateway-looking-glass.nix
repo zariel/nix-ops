@@ -36,6 +36,7 @@ pkgs.testers.runNixOSTest {
       pkgs.curl
       pkgs.iproute2
       pkgs.conntrack-tools
+      pkgs.tcpdump
     ];
   };
   nodes.core = { ... }: {
@@ -83,6 +84,8 @@ pkgs.testers.runNixOSTest {
         router.succeed(f"ip -n {namespace} link set lo up; ip -n {namespace} link set peer up; ip -n {namespace} addr add {peer}/24 dev peer")
         router.succeed(f"ip -n {namespace} route add default via {address}")
     router.succeed("ip route add default via 198.18.0.2")
+    # Spans the 31 s startup IGMP query interval and the 30 s PIM hello interval.
+    router.succeed("ip netns exec inside timeout 70 tcpdump -Z root -U -nn -i peer -w /tmp/multicast.pcap 'igmp or ip proto 103' >/tmp/tcpdump.log 2>&1 &")
     router.succeed("ip -6 addr add fd74:f571:d3bd:20::1/64 dev bond0.20 nodad; ip -n inside -6 addr add fd74:f571:d3bd:20::10/64 dev peer nodad")
     router.succeed("ip netns exec outside python -m http.server 8080 >/tmp/http.log 2>&1 &")
     router.wait_until_succeeds("ip netns exec inside curl -fsS --max-time 2 http://198.18.0.2:8080")
@@ -134,6 +137,12 @@ pkgs.testers.runNixOSTest {
     rules = [entry["rule"] for entry in kernel["nftables"] if "rule" in entry]
     assert any(expression.get("counter", {}).get("packets", 0) > 0 for rule in rules for expression in rule["expr"])
     assert "239.1.2.3" in report("igmp")
+
+    # The gateway owns the IGMP querier role and emits no PIM control traffic.
+    router.wait_until_fails("pgrep -x tcpdump", timeout=90)
+    multicast = router.succeed("tcpdump -nn -v -r /tmp/multicast.pcap")
+    assert "igmp query" in multicast and "10.1.2.1 >" in multicast, multicast
+    assert "PIM" not in multicast, multicast
     assert "ff3e::1234" in report("mld")
     assert "203.0.113.0/24" in report("bgp-route", "203.0.113.0/24")
     assert "Established" in report("bgp-neighbors", "10.254.0.1")

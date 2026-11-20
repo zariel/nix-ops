@@ -157,10 +157,10 @@ pkgs.testers.runNixOSTest {
     router.fail("ip netns exec transit curl --interface 172.20.0.10 -fsS --max-time 2 http://10.1.2.70:444")
     router.fail("ip netns exec transit curl --interface 10.254.0.1 -fsS --max-time 2 http://10.1.2.70:443")
 
-    # Certificate uploads must be reachable only from routed pods.
-    for zone, address in (("lan", "10.1.0.31"), ("servers", "10.1.1.30")):
+    # Certificate uploads and the UniFi controller must be reachable only from routed pods.
+    for zone, address in (("lan", "10.1.0.31"), ("lan", "10.1.0.23"), ("servers", "10.1.1.30")):
         router.succeed(f"ip netns exec {zone} ip addr add {address}/24 dev peer")
-        router.succeed(f"ip netns exec {zone} python -m http.server 443 --bind {address} >/tmp/{zone}-cert.log 2>&1 &")
+        router.succeed(f"ip netns exec {zone} python -m http.server 443 --bind {address} >/tmp/https-{address}.log 2>&1 &")
         router.wait_until_succeeds(f"ip netns exec transit curl --interface 172.20.0.10 -fsS --max-time 2 http://{address}:443")
         router.fail(f"ip netns exec transit curl --interface 10.254.0.1 -fsS --max-time 2 http://{address}:443")
 
