@@ -158,7 +158,7 @@ in
 
       binds {
           Mod+Shift+Slash { show-hotkey-overlay; }
-          Mod+T { spawn "${pkgs.alacritty}/bin/alacritty"; }
+          Mod+T { spawn "${pkgs.ghostty}/bin/ghostty" "+new-window"; }
           Mod+Return { spawn "${pkgs.ghostty}/bin/ghostty" "+new-window"; }
           Mod+D { spawn "${pkgs.fuzzel}/bin/fuzzel"; }
           Mod+E { spawn "${pkgs.kdePackages.dolphin}/bin/dolphin"; }
