@@ -13,6 +13,30 @@
 - Pipe the complete message through `format-commit-message`.
 - Do not manually hard-wrap prose; the formatter does this.
 
+# Writing
+
+In explanatory prose, develop one line of reasoning per paragraph. When
+adjacent sentences make closely related assertions, ask how one explains,
+limits, or follows from the other. Express that relationship in the syntax,
+combining the thoughts when they read naturally together. A short sentence
+can give a consequential point the emphasis it deserves.
+
+Carry the reasoning across paragraphs by picking up the condition or
+consequence that motivates the next idea. When the preceding explanation
+already leads to a design choice, state the choice directly. Repeatedly
+announcing conclusions or restating the case for each choice interrupts the
+argument.
+
+Give qualifications the prominence their effect warrants. Keep a condition
+with the claim whose truth depends on it. When several details clarify scope
+without changing the conclusion, finish the explanation first, then group
+those details where readers need them.
+
+When revising technical prose, preserve the strength and status of each claim.
+Keep requirements intact, state a rationale only when the source supports it,
+and preserve the distinction between proposed behaviour, established behaviour,
+and open questions.
+
 # Solution-space discipline
 
 Optimize for choosing the right problem and ownership model before optimizing
