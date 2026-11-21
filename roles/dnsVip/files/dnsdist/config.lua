@@ -163,6 +163,7 @@ addAction({
     '1.1.10.in-addr.arpa',    -- SERVERS reverse
     '2.1.10.in-addr.arpa',    -- TRUSTED reverse
     '3.1.10.in-addr.arpa',    -- IOT reverse
+    '4.1.10.in-addr.arpa',    -- ROON reverse
     '8.1.10.in-addr.arpa',    -- K8S reverse
     '2.168.192.in-addr.arpa'  -- GUEST reverse
 }, PoolAction('bind'))

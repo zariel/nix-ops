@@ -2,7 +2,7 @@
 $TTL 1h
 $ORIGIN 2.1.10.in-addr.arpa.
 @ IN SOA gateway.cbannister.casa. gateway.cbannister.casa. (
-  1708606198       ; serial number
+  2026112101       ; serial number; YYYYMMDDNN format
   2h               ; refresh period
   1h               ; retry period
   14d              ; expire time
@@ -26,10 +26,6 @@ $ORIGIN 2.1.10.in-addr.arpa.
 31   IN  PTR  office-homepod.cbannister.casa.
 32   IN  PTR  bedroom-homepod.cbannister.casa.
 50   IN  PTR  nvidia-shield.cbannister.casa.
-52   IN  PTR  blusound-flex-mini-office.cbannister.casa.
 53   IN  PTR  mrx740.cbannister.casa.
 54   IN  PTR  coreelec.cbannister.casa.
-60   IN  PTR  rock.cbannister.casa.
-61   IN  PTR  ropiee.cbannister.casa.
-63   IN  PTR  bluesound-node2i.cbannister.casa.
 70   IN  PTR  office-printer.cbannister.casa.

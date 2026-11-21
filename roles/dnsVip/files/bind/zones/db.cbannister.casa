@@ -2,7 +2,7 @@
 $TTL 5m
 $ORIGIN cbannister.casa.
 @ IN SOA gateway.cbannister.casa. gateway.cbannister.casa. (
-  2026111401       ; serial number; YYYYMMDDNN format
+  2026112102       ; serial number; YYYYMMDDNN format
   2h               ; refresh period
   1h               ; retry period
   14d              ; expire time
@@ -37,8 +37,6 @@ k8s-2                    IN  A  10.254.1.5
 nas                      IN  A  10.254.1.101
 
 am6b                     IN  A  10.1.2.54
-rock                     IN  A  10.1.2.60
-ropiee                   IN  A  10.1.2.61
 dev                      IN  A  10.1.2.15
 gaming                   IN  A  10.1.2.16
 bc250                    IN  A  10.1.2.57
@@ -53,3 +51,10 @@ dns2 IN A 10.254.53.2
 dns3 IN A 10.254.53.4
 
 beefchunk IN A 10.254.254.10
+
+; ROON
+rock                     IN  A  10.1.4.10
+ropiee                   IN  A  10.1.4.11
+ropiee-remote            IN  A  10.1.4.12
+bluesound-node2i         IN  A  10.1.4.13
+bluesound-flex-mini      IN  A  10.1.4.14

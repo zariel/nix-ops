@@ -86,6 +86,11 @@ in
           file = ./files/bind/zones/db.3.1.10.in-addr.arpa;
         };
 
+        "4.1.10.in-addr.arpa" = {
+          master = true;
+          file = ./files/bind/zones/db.4.1.10.in-addr.arpa;
+        };
+
         "8.1.10.in-addr.arpa" = {
           master = true;
           file = ./files/bind/zones/db.8.1.10.in-addr.arpa;
