@@ -435,6 +435,9 @@ an outage for its initial OS replacement and eventual kernel maintenance.
 
 ## Installation and state transfer
 
+Recovery access during cutover comes from the
+[out-of-band network](oob-network.md), which does not depend on the gateway.
+
 The live machine is a UEFI Intel i5-7500 with mlx4_en LAN and igb WAN NICs.
 MAC-based links rename VyOS eth0/eth1 to lan0/lan1, eth3 to wan0, eth2 to spare0
 and eth4 to rescue0, avoiding kernel ethN naming races.
