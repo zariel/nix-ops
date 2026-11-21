@@ -6,6 +6,7 @@
 let
   reservations = import ./reservations.nix;
   addresses = (import ../../roles/gateway-services/settings.nix).addresses;
+  network = import ../../lib/network.nix;
   dns = import ../../roles/dhcp-dns/settings.nix { inherit lib; };
   subnets = dns.networks;
   interfaces = lib.mapAttrsToList (_: subnet: "bond0.${toString subnet.id}") subnets;
@@ -42,7 +43,7 @@ in
       option-data = [
         {
           name = "domain-name-servers";
-          data = "10.254.253.53";
+          data = network.dnsVip;
         }
       ];
       option-def = [
