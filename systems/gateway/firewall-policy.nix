@@ -581,6 +581,34 @@ in
         saddr = setRef "transit_pods";
         comment = "Host metrics";
       })
+      # Home Assistant reaches these Trusted devices from the pod network.
+      (tcp {
+        saddr = setRef "transit_pods";
+        daddr = "10.1.2.53";
+        dport = 14999;
+        comment = "Pod access to Anthem A/V control";
+      })
+      (tcp {
+        saddr = setRef "transit_pods";
+        daddr = "10.1.2.54";
+        dport = [
+          8080
+          9090
+        ];
+        comment = "Pod access to Kodi JSON-RPC";
+      })
+      (tcp {
+        saddr = setRef "transit_pods";
+        daddr = "10.1.2.56";
+        dport = 80;
+        comment = "Pod access to the Unfolded Circle remote API";
+      })
+      (udp {
+        saddr = setRef "transit_pods";
+        daddr = "10.1.2.70";
+        dport = 161;
+        comment = "Pod access to Brother printer SNMP";
+      })
     ];
     transit.to.local = [
       (tcpUdp {
