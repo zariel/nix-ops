@@ -447,9 +447,14 @@ an outage for its initial OS replacement and eventual kernel maintenance.
 
 ## Deliberate differences and retained limitations
 
-- `rescue0` is left unnumbered. The live router had `10.1.0.1/24` on both this unplugged
-  NIC and VLAN 100. Management remains on VLAN 100; using a rescue NIC needs its
-  own non-overlapping subnet and explicit firewall access.
+- `rescue0` is the gateway's host-only out-of-band port, not a second VLAN 100
+  interface. VyOS had `10.1.0.1/24` on both this unplugged NIC and VLAN 100;
+  here it holds `10.1.254.50/24` in the `vrf-oob` VRF (table 1254), whose default
+  route via Beefchunk's `10.1.254.1` never enters the main table. The firewall
+  accepts only SSH through it and forwards nothing to or from it, and
+  `net.ipv4.tcp_l3mdev_accept` lets sshd accept those connections. Cable it only
+  for cutover and maintenance; the design is in the
+  [out-of-band network](oob-network.md#gateway-oob-nic).
 - WAN IPv6 DHCP/RA and prefix assignment to `dum99` are disabled by
   `ipv6WanEnabled` in `network.nix` until Hyperoptic fixes its failing advertised
   upstream gateway. Trusted and IoT retain ULA addressing and advertisements
