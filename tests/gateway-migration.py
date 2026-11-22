@@ -196,6 +196,16 @@ client.wait_until_succeeds("grep -q _airplay /tmp/trusted-mdns")
 client.succeed(f"{matter} mdns-announce trusted _hap._tcp.local")
 client.sleep(2)
 client.fail("grep -q _hap /tmp/iot-mdns")
+
+# ROON reflects over IPv4, and only the BluOS controller service reaches
+# Trusted: the players' AirPlay advertisements stay on ROON.
+client.succeed(f"{matter} mdns-listen trusted /tmp/trusted-mdns4 ipv4 >/tmp/trusted-mdns4.log 2>&1 &")
+client.wait_until_succeeds("test -e /tmp/trusted-mdns4")
+client.succeed(f"ip netns exec roon {matter} mdns-announce peer _airplay._tcp.local ipv4")
+client.succeed(f"ip netns exec roon {matter} mdns-announce peer _musc._tcp.local ipv4")
+client.wait_until_succeeds("grep -q _musc /tmp/trusted-mdns4")
+client.sleep(1)
+client.fail("grep -q _airplay /tmp/trusted-mdns4")
 primary.succeed("systemctl restart mdns-reflector; networkctl reload")
 primary.wait_for_unit("mdns-reflector.service")
 primary.fail("journalctl -b -u systemd-networkd -u frr --no-pager | grep -E 'Unknown (key|section|command)|Failed to parse|Invalid configuration'")

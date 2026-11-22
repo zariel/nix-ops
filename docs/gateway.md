@@ -2,7 +2,8 @@
 
 `nixosConfigurations.gateway` ports the running VyOS gateway inspected on
 2026-10-26, reconciled with `../vyos-config` main `760dcac3` on 2026-11-14. The ROON
-network follows `a21df908` and, for ROON, the IPv4 ping policy of `b11e4c9b`.
+network follows `a21df908`, the BluOS reflection intent of `9af2b642` and, for
+ROON, the IPv4 ping policy of `b11e4c9b`.
 Selected live addresses and firewall rules were verified over SSH on 2026-11-14.
 The live configuration takes precedence when preparing cutover.
 No installation or activation is performed by adding this host.
@@ -267,6 +268,7 @@ reflect the same packet.
 | --- | --- | --- | --- |
 | `_hap._tcp`, `_hap._udp`, `_airplay._tcp`, `_raop._tcp`, `_ipp._tcp`, `_printer._tcp`, `_companion-link._tcp` | Trusted | IoT | Apple Home hubs, iPhones and Macs on Trusted control HomeKit accessories and AirPlay receivers on IoT. IoT may open only AirPlay return connections to Trusted, so it has no use for Trusted's services. |
 | `_meshcop._udp`, `_matter._tcp`, `_matterc._udp`, `_matterd._udp` | Trusted, IoT, OTBR, Matter controllers | the same VLANs | Thread border routers, Matter controllers and devices discover each other in every direction, as before. |
+| `_musc._tcp` | Trusted | ROON | The BluOS app on Trusted finds the Bluesound players. Their Spotify, TIDAL, Qobuz Connect and AirPlay advertisements stay on ROON. |
 
 netflector captures mDNS and re-emits it through packet sockets, sourced from
 the gateway's own address on the egress VLAN with hop limit 255, so clients
@@ -444,7 +446,9 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   may reach only `10.254.253.53`, not the legacy resolver address. Trusted,
   including WireGuard peers, may reach every ROON device. Pings from ROON to the
   gateway are not rate limited, unlike VyOS's 10/second limit; the rule helpers
-  have no rate-limit field.
+  have no rate-limit field. Only `_musc._tcp` is reflected from ROON, to Trusted;
+  unlike VyOS's shared Avahi allow-list, ROON neither receives nor emits the
+  Apple, printing, Thread or Matter services, and needs no mDNS firewall rules.
 - DNS interception redirects IPv4 trusted, IoT and WireGuard requests to
   `10.254.253.53`, exempting both IPv4 DNS VIPs. IPv6 DNS interception is removed.
   Trusted and IoT WAN policy blocks TCP and UDP port 853 for both families.

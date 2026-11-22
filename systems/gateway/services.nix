@@ -62,6 +62,13 @@ let
         "_matterd._udp"
       ];
     }
+    {
+      # The BluOS app on Trusted finds the Bluesound players on ROON. Their
+      # Spotify, TIDAL and Qobuz Connect and AirPlay advertisements stay on ROON.
+      clients = [ "bond0.20" ];
+      devices = [ "bond0.60" ];
+      services = [ "_musc._tcp" ];
+    }
   ];
   ipv6Only = [
     "bond0.1100"
