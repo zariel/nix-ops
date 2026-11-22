@@ -118,7 +118,6 @@ else:
 
 if zone == "lan":
     exchange("bc:24:11:b4:9c:2c", requested="10.1.0.23")
-    exchange("00:0d:5d:09:27:b7", requested="10.1.0.31")
 
 # Controller discovery must be restricted to management clients identifying as ubnt.
 _, _, _, options = exchange(reserved_mac, [(60, b"ubnt")])

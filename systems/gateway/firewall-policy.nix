@@ -223,7 +223,6 @@ in
       "10.1.2.57"
     ];
     plex_clients = addressSet [ "10.1.3.16" ];
-    snmp_targets = addressSet [ "10.1.0.31" ];
     dns_servers = addressSet [ "10.254.53.0/24" ];
     routed_servers = addressSet [ "10.254.0.0/16" ];
     load_balancers = addressSet [ "10.45.0.0/24" ];
@@ -546,24 +545,9 @@ in
     transit.to.lan = [
       (tcp {
         saddr = setRef "transit_pods";
-        daddr = "10.1.0.31";
-        dport = 443;
-        comment = "PDU certificates";
-      })
-      (tcp {
-        saddr = setRef "transit_pods";
         daddr = "10.1.0.23";
         dport = 443;
         comment = "UniFi controller";
-      })
-      (udp {
-        daddr = setRef "snmp_targets";
-        dport = [
-          161
-          162
-        ];
-        saddr = setRef "transit_pods";
-        comment = "SNMP";
       })
       (tcp {
         daddr = setRef "metrics_targets";
