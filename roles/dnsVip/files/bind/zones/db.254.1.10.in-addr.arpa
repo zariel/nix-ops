@@ -1,0 +1,20 @@
+; Reverse DNS Zone for 10.1.254.0/24 (OOB). OOB devices are statically
+; addressed and never use DHCP, so this zone stays a static master.
+$TTL 1h
+$ORIGIN 254.1.10.in-addr.arpa.
+@ IN SOA gateway.cbannister.casa. gateway.cbannister.casa. (
+  2026112201       ; serial number; YYYYMMDDNN format
+  2h               ; refresh period
+  1h               ; retry period
+  14d              ; expire period
+  1h               ; minimum ttl
+)
+
+@    IN  NS   gateway.cbannister.casa.
+
+1    IN  PTR  beefchunk.cbannister.casa.
+10   IN  PTR  pikvm.cbannister.casa.
+20   IN  PTR  tesmart-kvm.cbannister.casa.
+30   IN  PTR  pdu.cbannister.casa.
+40   IN  PTR  console.cbannister.casa.
+50   IN  PTR  gateway-oob.cbannister.casa.

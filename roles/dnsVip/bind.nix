@@ -97,6 +97,11 @@ in
           file = ./files/bind/zones/db.8.1.10.in-addr.arpa;
         };
 
+        "254.1.10.in-addr.arpa" = {
+          master = true;
+          file = ./files/bind/zones/db.254.1.10.in-addr.arpa;
+        };
+
         "2.168.192.in-addr.arpa" = {
           master = true;
           file = ./files/bind/zones/db.2.168.192.in-addr.arpa;

@@ -104,6 +104,13 @@ pkgs.testers.runNixOSTest {
     with subtest("Initial VIP remains usable"):
         check_vip("192.0.2.53")
 
+    with subtest("The OOB reverse zone is answered by the local BIND"):
+        # Without the dnsdist routing the query would go to an upstream the
+        # test network cannot reach.
+        client.succeed(
+            "test \"$(dig @192.0.2.53 -x 10.1.254.10 +short +tries=1 +time=2)\" = pikvm.cbannister.casa."
+        )
+
     with subtest("Adding a VIP serves both addresses"):
         dns.succeed(f"{booted_system}/specialisation/overlap/bin/switch-to-configuration test")
         check_vip("192.0.2.53")
