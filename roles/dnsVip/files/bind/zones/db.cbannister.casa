@@ -2,7 +2,7 @@
 $TTL 5m
 $ORIGIN cbannister.casa.
 @ IN SOA gateway.cbannister.casa. gateway.cbannister.casa. (
-  2026112202       ; serial number; YYYYMMDDNN format
+  2026112203       ; serial number; YYYYMMDDNN format
   2h               ; refresh period
   1h               ; retry period
   14d              ; expire time
@@ -23,6 +23,7 @@ unifi                    IN  A  10.1.0.23
 pikvm                    IN  A  10.1.254.10
 tesmart-kvm              IN  A  10.1.254.20
 pdu                      IN  A  10.1.254.30
+console                  IN  A  10.1.254.40
 
 ; servers
 pve-ipmi                 IN  A  10.1.1.30
