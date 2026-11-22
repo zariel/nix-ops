@@ -2,8 +2,8 @@
 
 `nixosConfigurations.gateway` ports the running VyOS gateway inspected on
 2026-10-26, reconciled with `../vyos-config` main `760dcac3` on 2026-11-14. The ROON
-network follows `a21df908`, the BluOS reflection intent of `9af2b642` and, for
-ROON, the IPv4 ping policy of `b11e4c9b`.
+network follows `a21df908`, the BluOS reflection intent of `9af2b642`, the pod
+access of `17f0c972` and, for ROON, the IPv4 ping policy of `b11e4c9b`.
 Selected live addresses and firewall rules were verified over SSH on 2026-11-14.
 The live configuration takes precedence when preparing cutover.
 No installation or activation is performed by adding this host.
