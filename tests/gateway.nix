@@ -102,6 +102,8 @@ pkgs.testers.runNixOSTest {
         router.succeed(f"ip netns exec {name} ip address add {address}/24 dev peer")
         router.succeed(f"ip netns exec {name} ip route add default via {gateway}")
         router.succeed(f"ip netns exec {name} python -m http.server 8080 --bind {address} >/tmp/{name}.log 2>&1 &")
+        # Later probes expect this fixture to be listening.
+        router.wait_until_succeeds(f"ip netns exec {name} ss -H -ltn sport = :8080 | grep -q .")
 
     client("trusted", "bond0.20", "10.1.2.1", "10.1.2.11")
     client("iot", "bond0.40", "10.1.3.1", "10.1.3.14")
