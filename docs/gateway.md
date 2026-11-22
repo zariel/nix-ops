@@ -528,7 +528,58 @@ before installing. Do not format or reuse the current VyOS persistence partition
 without a separate backup and an explicit cutover plan. Keep a bootable VyOS disk
 for rollback if possible.
 
-Before the first NixOS boot:
+### Install offline from USB
+
+Build the installer from this checkout on an x86_64 Linux Nix builder before
+disconnecting the WAN. The ISO includes the exact gateway system closure.
+Building the ISO itself offline requires the locked inputs and build dependencies
+to be available locally.
+
+```sh
+nh os build-image . -H gateway-installer --out-link ./result
+# With nh older than 4.5, use this equivalent command instead:
+# nix build .#nixosConfigurations.gateway-installer.config.system.build.isoImage
+```
+
+On Linux, identify the USB stick by model and serial. Unmount its partitions
+and replace the placeholder with its whole-disk by-id path. This overwrites the stick.
+
+```sh
+lsblk -o PATH,SIZE,MODEL,SERIAL,TRAN,MOUNTPOINTS
+set -- ./result/iso/*.iso
+sudo dd if="$1" of=/dev/disk/by-id/usb-REPLACE_ME bs=4M conv=fsync status=progress
+```
+
+Boot the USB in UEFI mode and run `sudo -i` at the live console. Check that
+`ls /sys/firmware/efi` succeeds. Identify the **new gateway disk** by serial
+with `lsblk`. The following commands erase that disk. Substitute its whole-disk
+by-id path and keep the installer USB and VyOS disk out of this step.
+
+```sh
+disk=/dev/disk/by-id/REPLACE_WITH_NEW_DISK
+parted --script "$disk" mklabel gpt mkpart ESP fat32 1MiB 1025MiB set 1 esp on mkpart root ext4 1025MiB 100%
+udevadm settle
+mkfs.fat -F 32 -n ESP "${disk}-part1"
+mkfs.ext4 -L nixos "${disk}-part2"
+mount "${disk}-part2" /mnt
+mount --mkdir "${disk}-part1" /mnt/boot
+```
+
+Mount your separate key backup, then restore the existing gateway identity.
+Replace the source path below with the private key from that backup. The ISO
+contains the encrypted secrets. Network startup needs the matching private key.
+
+```sh
+install -d -m 0755 /mnt/etc/ssh
+install -m 0600 /path/to/backup/ssh_host_ed25519_key /mnt/etc/ssh/ssh_host_ed25519_key
+ssh-keygen -y -f /mnt/etc/ssh/ssh_host_ed25519_key > /mnt/etc/ssh/ssh_host_ed25519_key.pub
+nixos-install --root /mnt --system "$(cat /etc/gateway-system)" --no-channel-copy --option substitute false
+```
+
+Set the console root password when prompted. Complete the state transfer below
+under `/mnt`, then power off, remove the USB and boot the new disk.
+
+### Before the first NixOS boot
 
 1. Back up VyOS configuration, DHCP leases, WireGuard key, TFTP files and Matchbox
    data. Verify the UniFi migration to pve2 VM 203 and its PBS backups before
