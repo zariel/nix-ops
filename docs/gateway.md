@@ -55,8 +55,8 @@ units; it does not wait for the WAN or unused ports.
 
 ## Host service addresses
 
-The [site host-service policy](https://github.com/zariel/home-ops/blob/main/docs/host-services.md)
-reserves `10.5.0.0/16` for host-owned services, with one `/26` per host.
+The site host-service policy, kept in the infra workspace as
+`docs/host-services.md`, reserves `10.5.0.0/16` for host-owned services, with one `/26` per host.
 NetBox holds the gateway's reserved `10.5.0.0/26` block. The settings in
 `roles/gateway-services/settings.nix` feed listeners, DHCP options, DNS records
 and firewall destinations. The BGP `network` statement advertises this `/26`;
