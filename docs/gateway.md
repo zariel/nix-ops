@@ -2,7 +2,8 @@
 
 `nixosConfigurations.gateway` ports the running VyOS gateway inspected on
 2026-10-26, reconciled with `../vyos-config` main `760dcac3` on 2026-11-14. The ROON
-network follows `f2e26b96` and, for ROON, the IPv4 ping policy of `b11e4c9b`.
+network follows `a21df908`, `9af2b642` and, for ROON, the IPv4 ping policy of
+`b11e4c9b`.
 Selected live addresses and firewall rules were verified over SSH on 2026-11-14.
 The live configuration takes precedence when preparing cutover.
 No installation or activation is performed by adding this host.
@@ -413,12 +414,10 @@ an outage for its initial OS replacement and eventual kernel maintenance.
 - ROON (VLAN 60, `10.1.4.0/24`) is IPv4-only, as on VyOS: it has no link-local
   address or IPv6 forwarding, and every IPv6 pair involving the zone is denied.
   Its DHCP pool ends at `.239`. As on VyOS, its DNS is not intercepted; the zone
-  may reach only `10.254.253.53`, not the legacy resolver address. The Trusted
-  LAN restrictions for ROCK web administration and Remote control match the
-  `10.1.2.0/24` source prefix instead of `bond0.20`; WireGuard AllowedIPs keep
-  peers outside that prefix, so only ARC is reachable over WireGuard. Pings from
-  ROON to the gateway are not rate limited, unlike VyOS's 10/second limit;
-  the rule helpers have no rate-limit field.
+  may reach only `10.254.253.53`, not the legacy resolver address. Trusted,
+  including WireGuard peers, may reach every ROON device. Pings from ROON to the
+  gateway are not rate limited, unlike VyOS's 10/second limit; the rule helpers
+  have no rate-limit field.
 - DNS interception redirects IPv4 trusted, IoT and WireGuard requests to
   `10.254.253.53`, exempting both IPv4 DNS VIPs. IPv6 DNS interception is removed.
   Trusted and IoT WAN policy blocks TCP and UDP port 853 for both families.

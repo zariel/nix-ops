@@ -705,37 +705,9 @@ in
         comment = "Throughput testing";
       })
     ];
-    # The Trusted LAN prefix excludes WireGuard peers, whose AllowedIPs bind
-    # them to 10.0.11.0/24; only Roon ARC is also available over WireGuard.
-    trusted.to.roon = [
-      icmp4
-      (tcp {
-        saddr = "10.1.2.0/24";
-        daddr = rock;
-        dport = 80;
-        comment = "ROCK web administration";
-      })
-      (tcp {
-        daddr = rock;
-        dport = 59453;
-        comment = "Roon ARC";
-      })
-      (tcp {
-        saddr = "10.1.2.0/24";
-        daddr = rock;
-        dport = [
-          9330
-          9332
-        ];
-        comment = "Roon Remote control";
-      })
-      (udp {
-        saddr = "10.1.2.0/24";
-        daddr = rock;
-        dport = 9003;
-        comment = "Roon unicast discovery";
-      })
-    ];
+    # Trusted clients, including WireGuard peers, may reach every ROON device:
+    # Roon control and ARC, ROCK administration and the BluOS app.
+    trusted.to.roon = [ accept ];
     trusted.to.servers = [ accept ];
     trusted.to.transit = [
       icmp4

@@ -141,25 +141,21 @@ pkgs.testers.runNixOSTest {
         router.fail(f"ip netns exec {zone} curl -fsS --max-time 2 http://198.18.0.2:853")
         router.succeed(f"ip netns exec {zone} curl -fsS --max-time 2 http://198.18.0.2:8080")
 
-    # Trusted LAN clients control ROCK; ARC is also reachable from other trusted
-    # sources such as WireGuard peers, but never from WAN.
-    for port in (80, 59453, 9330, 9331, 9332):
-        router.succeed(f"ip netns exec roon python -m http.server {port} --bind 10.1.4.10 >/tmp/rock-{port}.log 2>&1 &")
-    for port in (80, 59453, 9330, 9332):
-        router.wait_until_succeeds(f"ip netns exec trusted curl -fsS --max-time 2 http://10.1.4.10:{port}")
-    for port in (8080, 9331):
-        router.fail(f"ip netns exec trusted curl -fsS --max-time 2 http://10.1.4.10:{port}")
+    # Trusted clients, including WireGuard peers, reach every ROON device on any
+    # port. Other zones and WAN do not; public ARC access stays closed.
+    router.succeed("ip netns exec roon ip addr add 10.1.4.11/24 dev peer")
+    router.succeed("ip netns exec roon python -m http.server 59453 --bind 10.1.4.10 >/tmp/rock-arc.log 2>&1 &")
+    router.succeed("ip netns exec roon python -m http.server 8080 --bind 10.1.4.11 >/tmp/player.log 2>&1 &")
     router.succeed("ip netns exec trusted ip addr add 10.0.11.5/32 dev peer; ip route add 10.0.11.5/32 dev bond0.20")
-    router.succeed("ip netns exec trusted curl --interface 10.0.11.5 -fsS --max-time 2 http://10.1.4.10:59453")
-    for port in (80, 9330):
-        router.fail(f"ip netns exec trusted curl --interface 10.0.11.5 -fsS --max-time 2 http://10.1.4.10:{port}")
+    for source in ("10.1.2.11", "10.0.11.5"):
+        for target in ("10.1.4.10:59453", "10.1.4.10:8080", "10.1.4.11:8080"):
+            router.wait_until_succeeds(f"ip netns exec trusted curl --interface {source} -fsS --max-time 2 http://{target}")
     router.succeed("ip netns exec trusted ip addr del 10.0.11.5/32 dev peer; ip route del 10.0.11.5/32 dev bond0.20")
-    router.fail("ip netns exec iot curl -fsS --max-time 2 http://10.1.4.10:59453")
+    for zone in ("iot", "guest", "servers", "lan", "wan"):
+        router.fail(f"ip netns exec {zone} curl -fsS --max-time 2 http://10.1.4.10:59453")
     router.fail("ip netns exec wan curl -fsS --max-time 2 http://198.18.0.1:59453")
-    router.fail("ip netns exec wan curl -fsS --max-time 2 http://10.1.4.10:59453")
 
     # ROON reaches the resolver VIP, ROCK's music library and web services only.
-    router.succeed("ip netns exec roon ip addr add 10.1.4.11/24 dev peer")
     router.succeed("ip netns exec transit ip addr add 10.254.1.101/32 dev lo; ip route add 10.254.1.101/32 via 10.254.0.1")
     for port in (445, 8080):
         router.succeed(f"ip netns exec transit python -m http.server {port} --bind 10.254.1.101 >/tmp/storage-{port}.log 2>&1 &")
