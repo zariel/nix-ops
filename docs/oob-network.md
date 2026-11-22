@@ -76,7 +76,6 @@ stateless, so each permitted conversation needs a rule in each direction.
 | Trusted `10.1.2.0/24` | Any OOB device | All IPv4 | Operator access, including through trusted-backup |
 | Pods `172.20.0.0/16` | Any OOB device | ICMP echo | blackbox-exporter reachability probes |
 | Pods | PDU | TCP 443, UDP 161 | Certificate deployment, SNMP polling |
-| Gateway NTP `10.5.0.10` | Any OOB device | UDP from port 123 | NTP replies |
 | Any | Any OOB device | ICMP unreachable, time-exceeded | Errors for flows the devices start |
 
 `OOB-IN`, inbound on VLAN 254, decides what an OOB device may send. It admits
@@ -89,7 +88,6 @@ replies rather than new connections wherever the protocol allows it:
 | PiKVM | Trusted | UDP from 20000-40000 | WebRTC video from Janus's RTP ports to the browser, which opens the flow from trusted; without it the web UI's H.264 stream is black |
 | Any OOB device | Pods | ICMP echo-reply | Probe replies |
 | PDU | Pods | TCP from 443 (`established`), UDP from 161 | Certificate deployment and SNMP replies |
-| Any OOB device | `10.5.0.10` | UDP to 123 | NTP |
 | Any OOB device | `10.45.0.2` | UDP to 514 | Syslog to the cluster |
 
 Both ACLs end with a logged deny. The FastIron guide excludes outbound ACL
@@ -105,8 +103,11 @@ read and verified.
 The DNS VMs, the NAS and the Kubernetes nodes themselves need no OOB access.
 OOB devices get no DNS: they are configured by address, and their
 `pdu.cbannister.casa`-style names exist only for clients. They take time from
-the gateway's NTP address `10.5.0.10`, which both gateway firewalls already
-accept from the transit zone; while the gateway is down they free-run. SNMP
+Beefchunk at `10.1.254.1`, which the rule admitting all traffic to the switch
+already covers, so they depend only on their own router. Beefchunk syncs from
+the gateway's `10.5.0.10` and runs `ntp master` at stratum 8, so it keeps
+serving its own clock while the gateway is down. That matters for PiKVM, which
+has no battery-backed clock. SNMP
 traps are not used, so no trap destination is permitted.
 
 The gateway needs one rule on each implementation so trusted clients reach
