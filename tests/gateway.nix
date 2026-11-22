@@ -283,6 +283,22 @@ pkgs.testers.runNixOSTest {
         router.succeed(f"ip netns exec {zone} curl -gfsS --max-time 2 http://[2001:db8:ffff::2]:8081")
         router.fail(f"ip netns exec {zone} curl -gfsS --max-time 2 http://[2001:db8:ffff::2]:853")
 
+    # Relayed discovery carries the client's source address, so ROCK's replies
+    # arrive unsolicited; only its discovery socket may send them.
+    udp_server("trusted", "10.1.2.11", 45005, "/tmp/roon-replies")
+    udp_packet("roon", "10.1.4.10", 9003, "10.1.2.11", 45005, "rock-reply")
+    router.wait_until_succeeds("grep -x rock-reply /tmp/roon-replies")
+    udp_packet("roon", "10.1.4.10", 9004, "10.1.2.11", 45005, "wrong-port")
+    udp_packet("roon", "10.1.4.11", 9003, "10.1.2.11", 45005, "not-rock")
+    # Trusted clients may also query ROCK's discovery port directly.
+    udp_server("roon", "10.1.4.10", 9003, "/tmp/roon-discovery")
+    udp_packet("trusted", "10.1.2.11", 45006, "10.1.4.10", 9003, "trusted-query")
+    router.wait_until_succeeds("grep -x trusted-query /tmp/roon-discovery")
+    udp_packet("iot", "10.1.3.14", 45006, "10.1.4.10", 9003, "iot-query")
+    router.sleep(1)
+    router.fail("grep -E 'wrong-port|not-rock' /tmp/roon-replies")
+    router.fail("grep -x iot-query /tmp/roon-discovery")
+
     # Thread routing belongs to its infrastructure VLAN, never an IoT next hop.
     router.succeed("ip netns exec iot ip -6 address add fd42:dfb5:24e4:1::2/64 dev peer nodad")
     router.succeed("ip -6 route add fd42:dfb5:24e4:1::/64 via fd00:40::2")

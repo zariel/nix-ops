@@ -58,6 +58,19 @@ primary.wait_until_succeeds("vtysh -c 'show bgp ipv4 unicast neighbors 10.254.0.
 advertised = json.loads(primary.succeed("cat /tmp/advertised.json"))
 assert "10.1.2.0/24" not in advertised.get("advertisedRoutes", {})
 
+
+def relay_process():
+    pid = primary.succeed("systemctl show roon-discovery -p MainPID --value").strip()
+    return primary.succeed(f"cat /proc/{pid}/comm").strip()
+
+
+# The Roon discovery relay reads interface subnets once, so it must not start
+# while Trusted's /24 belongs to the backup.
+primary.succeed("systemctl restart roon-discovery")
+primary.sleep(3)
+primary.succeed("systemctl is-active roon-discovery.service")
+assert relay_process() != "udp-proxy-2020", relay_process()
+
 # Intentional handback; the higher priority primary must not preempt on recovery.
 backup.succeed("systemctl stop keepalived")
 primary.wait_until_succeeds("ip -4 addr show dev bond0.20 | grep '10.1.2.1/24'")
@@ -65,6 +78,27 @@ path("10.254.0.0")
 backup.succeed("systemctl start keepalived")
 backup.sleep(3)
 assert not owns(backup, "trusted")
+primary.wait_until_succeeds("test \"$(cat /proc/$(systemctl show roon-discovery -p MainPID --value)/comm)\" = udp-proxy-2020")
+
+# Discovery broadcasts on UDP 9003 cross between Trusted and ROON with their
+# original sources, and ROCK's unicast replies are routed back to the client.
+client.succeed("ip netns add roon; ip link add roon link eth1 type vlan id 60; ip link set roon netns roon; ip -n roon link set roon name peer")
+client.succeed("ip -n roon link set lo up; ip -n roon link set peer up; ip -n roon addr add 10.1.4.10/24 dev peer; ip -n roon route add default via 10.1.4.1")
+udp = "python /etc/gateway-udp.py"
+for port in (9003, 9004):
+    client.succeed(f"ip netns exec roon {udp} echo 0.0.0.0 {port} /tmp/rock-{port} >/tmp/rock-{port}.log 2>&1 &")
+    client.wait_until_succeeds(f"test -f /tmp/rock-{port}.ready")
+reply = client.wait_until_succeeds(f"{udp} request 10.1.2.10 45010 10.1.2.255 9003 discover", timeout=30)
+assert reply.strip() == "reply-discover 10.1.4.10:9003", reply
+client.succeed("grep -x 'discover 10.1.2.10' /tmp/rock-9003")
+client.succeed(f"{udp} send 10.1.2.10 45011 10.1.2.255 9004 other-port")
+
+client.succeed(f"{udp} echo 0.0.0.0 9003 /tmp/trusted-9003 >/tmp/trusted-9003.log 2>&1 &")
+client.wait_until_succeeds("test -f /tmp/trusted-9003.ready")
+client.succeed(f"ip netns exec roon {udp} send 10.1.4.10 45012 10.1.4.255 9003 announce")
+client.wait_until_succeeds("grep -x 'announce 10.1.4.10' /tmp/trusted-9003")
+client.sleep(1)
+client.fail("grep other-port /tmp/rock-9004")
 
 # IPv6-only attachments retain their production addresses and OTBR identity.
 for namespace, vlan, address in (

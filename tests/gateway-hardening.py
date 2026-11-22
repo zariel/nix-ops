@@ -15,7 +15,7 @@ units = [
     "systemd-networkd", "systemd-resolved", "frr", "keepalived", "bind",
     "kea-dhcp4-server", "kea-dhcp-ddns-server", "atftpd", "avahi-daemon",
     "chronyd", "syslog", "prometheus-node-exporter", "sshd", "gateway-cake",
-    "spamhaus-drop", "matchbox",
+    "spamhaus-drop", "matchbox", "roon-discovery",
 ]
 for unit in units:
     gateway.wait_for_unit(unit + ".service")
@@ -48,7 +48,9 @@ lan.succeed("ip netns exec trusted python -c " + shlex.quote('import socket; s=s
 gateway.succeed('curl -fsS http://10.5.0.11:9100/metrics | grep "^node_timex_offset_seconds"')
 
 # Verify the live process identity and mount protections through the kernel.
-for unit in ("atftpd", "syslog"):
+# The Roon relay replaces its start script once Trusted's VRRP address is present.
+gateway.wait_until_succeeds("test \"$(cat /proc/$(systemctl show roon-discovery -p MainPID --value)/comm)\" = udp-proxy-2020")
+for unit in ("atftpd", "syslog", "roon-discovery"):
     pid = gateway.succeed(f"systemctl show {unit} -p MainPID --value").strip()
     status = gateway.succeed(f"cat /proc/{pid}/status")
     uid = next(line.split()[1] for line in status.splitlines() if line.startswith("Uid:"))

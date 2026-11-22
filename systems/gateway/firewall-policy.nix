@@ -439,6 +439,16 @@ in
         comment = "ROCK music library";
       })
     ];
+    # Relayed discovery keeps the client's source address, so ROCK replies
+    # directly to the client's sending socket.
+    roon.to.trusted = [
+      (udp {
+        saddr = rock;
+        sport = 9003;
+        daddr = "10.1.2.0/24";
+        comment = "Roon discovery replies";
+      })
+    ];
     roon.to.wan = [
       (tcp {
         dport = [
@@ -718,6 +728,12 @@ in
           9332
         ];
         comment = "Roon Remote control";
+      })
+      (udp {
+        saddr = "10.1.2.0/24";
+        daddr = rock;
+        dport = 9003;
+        comment = "Roon unicast discovery";
       })
     ];
     trusted.to.servers = [ accept ];

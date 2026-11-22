@@ -220,6 +220,7 @@ pkgs.testers.runNixOSTest {
         pkgs.iputils
       ];
       environment.etc."gateway-matter.py".source = ./gateway-matter.py;
+      environment.etc."gateway-udp.py".source = ./gateway-udp.py;
     };
   };
   testScript = builtins.readFile ./gateway-migration.py;

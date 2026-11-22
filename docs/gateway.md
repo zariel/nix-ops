@@ -34,9 +34,18 @@ primary on the shared network; they must not run with the same node address.
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
   All 59 live reservations are included, including MACs used in different VLANs
   and `bc250-lounge`, which is absent from the VyOS repository scripts.
-- Chrony, Avahi, node-exporter, FRR and Matchbox 0.11.0 run as native systemd
-  services. There are no application containers on this gateway. UniFi OS Server
-  runs separately on pve2 VM 203 at `10.1.0.23`.
+- Chrony, Avahi, node-exporter, FRR, Matchbox 0.11.0 and the Roon discovery
+  relay run as native systemd services. There are no application containers on
+  this gateway. UniFi OS Server runs separately on pve2 VM 203 at `10.1.0.23`.
+- The `roon-discovery` unit runs udp-proxy-2020 0.1.4, the release in VyOS's
+  container image, packaged in `packages/udp-proxy-2020`. It relays UDP 9003
+  broadcasts between `bond0.20` and `bond0.60` only, keeping each sender's
+  source address so ROCK and Trusted clients reply to each other directly.
+  It captures and re-injects frames through packet sockets, which nftables does
+  not filter; the routed unicast replies follow the ROON firewall rules. The
+  relay reads interface subnets once at startup, so its start script waits for
+  Trusted's VRRP `10.1.2.1/24`, as on VyOS. Because preemption is disabled, a
+  primary that starts while the backup owns that address waits until handback.
 - Networkd owns the application's `/32` addresses on loopback and an unreachable
   summary route for `10.5.0.0/26`. FRR announces that host block through the ICX.
   Application restarts and removal of one address do not withdraw other services;
@@ -109,6 +118,7 @@ Systemd delivers BIND and D2 credentials separately.
 | TFTP | Dynamic unprivileged user, privileged-port binding, read-only boot files. Upload requests are rejected. | 128 MiB |
 | Syslog forwarding | Dynamic unprivileged user; reads the journal with a persistent cursor, writes managed state/runtime directories and connects only to `10.45.0.2`. | 256 MiB |
 | Matchbox | Dedicated unprivileged user; binds only IPv4 TCP 80 and reads boot assets. | 256 MiB |
+| Roon discovery | Dynamic unprivileged user with raw packet access; binds only IPv4 UDP 9003 and has no IP traffic on its sockets. | 128 MiB |
 | Chrony | Retains clock adjustment; no direct hardware clock devices. | 128 MiB |
 | Avahi | Existing upstream sandbox; only configured reflector interfaces. | 128 MiB |
 | Node exporter | Existing upstream sandbox and no capabilities. Read-only timex syscalls remain available for metrics. | 512 MiB |
@@ -136,7 +146,8 @@ test hardware and credentials. It exercises WAN DHCP, client leases, TFTP reads
 and denied writes, live syslog forwarding, SSH/sudo, sandboxed Nix builds, service
 recovery and asset uploads. Process identities, mount restrictions and cgroup
 limits are observed through the kernel. The other gateway checks cover BGP,
-VRRP, DNS replication, packet filtering and feed-update failure recovery.
+VRRP, DNS replication, packet filtering, Roon discovery relaying and feed-update
+failure recovery.
 
 ### Upload Matchbox assets
 
@@ -498,7 +509,8 @@ Before the first NixOS boot:
 
 At cutover, verify LACP members, VLAN MTUs, WAN lease/default routes, IPv6 PD,
 all four BGP peers, learned DNS/service routes, DHCP renewals in each VLAN,
-BIOS/UEFI/iPXE boot, WireGuard, UniFi adoption, mDNS/Thread, blocked public Roon ARC access,
+BIOS/UEFI/iPXE boot, WireGuard, UniFi adoption, mDNS/Thread, Roon discovery from
+Trusted clients, blocked public Roon ARC access,
 torrent forwarding and CAKE latency. Test guest/IoT isolation from real clients too.
 The isolated VM checks cover packet policy, native application startup, namespace
 isolation and BGP route installation/withdrawal through an independent peer's
