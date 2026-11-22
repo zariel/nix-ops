@@ -2,8 +2,7 @@
 
 `nixosConfigurations.gateway` ports the running VyOS gateway inspected on
 2026-10-26, reconciled with `../vyos-config` main `760dcac3` on 2026-11-14. The ROON
-network follows `a21df908`, `9af2b642` and, for ROON, the IPv4 ping policy of
-`b11e4c9b`.
+network follows `a21df908` and, for ROON, the IPv4 ping policy of `b11e4c9b`.
 Selected live addresses and firewall rules were verified over SSH on 2026-11-14.
 The live configuration takes precedence when preparing cutover.
 No installation or activation is performed by adding this host.
@@ -35,8 +34,8 @@ primary on the shared network; they must not run with the same node address.
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
   All 59 live reservations are included, including MACs used in different VLANs
   and `bc250-lounge`, which is absent from the VyOS repository scripts.
-- Chrony, Avahi, node-exporter, FRR, Matchbox 0.11.0 and the Roon discovery
-  relay run as native systemd services. There are no application containers on
+- Chrony, node-exporter, FRR, Matchbox 0.11.0, the mDNS reflector and the Roon
+  discovery relay run as native systemd services. There are no application containers on
   this gateway. UniFi OS Server runs separately on pve2 VM 203 at `10.1.0.23`.
 - The `roon-discovery` unit runs udp-proxy-2020 0.1.4, the release in VyOS's
   container image, packaged in `packages/udp-proxy-2020`. It relays UDP 9003
@@ -121,7 +120,7 @@ Systemd delivers BIND and D2 credentials separately.
 | Matchbox | Dedicated unprivileged user; binds only IPv4 TCP 80 and reads boot assets. | 256 MiB |
 | Roon discovery | Dynamic unprivileged user with raw packet access; binds only IPv4 UDP 9003 and has no IP traffic on its sockets. | 128 MiB |
 | Chrony | Retains clock adjustment; no direct hardware clock devices. | 128 MiB |
-| Avahi | Existing upstream sandbox; only configured reflector interfaces. | 128 MiB |
+| mDNS reflector | Dynamic unprivileged user with raw packet access; binds no IP port and has no IP traffic on its sockets. | 128 MiB |
 | Node exporter | Existing upstream sandbox and no capabilities. Read-only timex syscalls remain available for metrics. | 512 MiB |
 | D-Bus broker / NSS cache | Local IPC and identity lookup, with capability/syscall restrictions. | 256 / 128 MiB |
 | SSH | Retains host filesystem access and privilege transitions for sudo and deployment. | 1 GiB |
@@ -147,8 +146,8 @@ test hardware and credentials. It exercises WAN DHCP, client leases, TFTP reads
 and denied writes, live syslog forwarding, SSH/sudo, sandboxed Nix builds, service
 recovery and asset uploads. Process identities, mount restrictions and cgroup
 limits are observed through the kernel. The other gateway checks cover BGP,
-VRRP, DNS replication, packet filtering, Roon discovery relaying and feed-update
-failure recovery.
+VRRP, DNS replication, packet filtering, mDNS reflection, Roon discovery relaying
+and feed-update failure recovery.
 
 ### Upload Matchbox assets
 
@@ -250,6 +249,34 @@ Networkd fits a router whose physical topology changes infrequently. NetworkMana
 connection profiles are an alternative when frequent interactive link changes
 matter; a custom reconciler would add lifecycle and rollback behaviour to maintain.
 Neither alternative eliminates a link interruption when recreating a bond or VLAN.
+
+## mDNS reflection
+
+VyOS reflects mDNS through one Avahi process whose allow-list applies to every
+reflector interface, so a VLAN that joins the reflector sends and receives every
+listed service. The NixOS gateway instead grants each service between specific
+VLAN pairs. The `mdns-reflector` unit runs netflector 0.17.1, packaged in
+`packages/netflector`, from grants in `systems/gateway/services.nix`. Each grant
+names client VLANs, device VLANs and services: queries cross from clients to
+devices, and the devices' answers and announcements cross back. Nothing is
+reflected in the other direction. The build rejects a generated configuration
+that `netflector --check-config` refuses, such as two entries that could
+reflect the same packet.
+
+| Services | Clients | Devices | Purpose |
+| --- | --- | --- | --- |
+| `_hap._tcp`, `_hap._udp`, `_airplay._tcp`, `_raop._tcp`, `_ipp._tcp`, `_printer._tcp`, `_companion-link._tcp` | Trusted | IoT | Apple Home hubs, iPhones and Macs on Trusted control HomeKit accessories and AirPlay receivers on IoT. IoT may open only AirPlay return connections to Trusted, so it has no use for Trusted's services. |
+| `_meshcop._udp`, `_matter._tcp`, `_matterc._udp`, `_matterd._udp` | Trusted, IoT, OTBR, Matter controllers | the same VLANs | Thread border routers, Matter controllers and devices discover each other in every direction, as before. |
+
+netflector captures mDNS and re-emits it through packet sockets, sourced from
+the gateway's own address on the egress VLAN with hop limit 255, so clients
+accept the answers as on-link. Packet sockets bypass nftables, so the firewall
+holds no mDNS allowances; the policy lives in the grants. The gateway's IGMP and
+MLD memberships for the mDNS groups use the existing multicast membership rules.
+Answers lose link-local address records, which the other VLAN could not reach.
+The unit starts once the VLAN interfaces exist; netflector then follows address
+changes itself, without ordering against networkd or VRRP. It runs on the primary only;
+the trusted backup runs no reflector.
 
 ## Firewall maintenance
 
@@ -432,8 +459,11 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   asymmetric routes. Torrent ingress requires TCP destination NAT; public Roon
   ARC access is removed. The live CN/RU transit/WAN policy remains backed by
   the fixed snapshot in `geoip-cn-ru.nft`; refresh it deliberately from a trusted source.
-- Avahi multicast queries may use ephemeral source ports. UDP replies from 5353
-  to unprivileged client ports are allowed in both directions on reflector LANs.
+- mDNS reflection is granted per service and direction between VLAN pairs,
+  instead of through VyOS's one Avahi allow-list across every reflector
+  interface; see [mDNS reflection](#mdns-reflection). Trusted's own HomeKit,
+  AirPlay, printing and companion-link advertisements no longer reach IoT.
+  Legacy unicast mDNS queriers, which ask from ephemeral ports, are not served.
 - Node exporter listens only on `10.5.0.11`. Routed pod access includes PDU
   and IPMI HTTPS certificate uploads, UniFi controller HTTPS at `10.1.0.23` and
   the existing Proxmox management ports.

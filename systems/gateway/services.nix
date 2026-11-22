@@ -23,6 +23,99 @@ let
       lib.getExe (pkgs.callPackage ../../packages/udp-proxy-2020/package.nix { })
     } --interface ${lib.concatStringsSep "," roonInterfaces} --port 9003
   '';
+  # mDNS reflection is granted per service between VLAN pairs. Each grant
+  # exposes services advertised on its device VLANs to clients on its client
+  # VLANs; queries cross towards the devices and answers come back, and
+  # nothing is reflected the other way.
+  threadMatter = [
+    "bond0.20"
+    "bond0.40"
+    "bond0.1100"
+    "bond0.1101"
+  ];
+  discovery = [
+    {
+      # Apple Home hubs, iPhones and Macs on Trusted control HomeKit
+      # accessories and AirPlay receivers on IoT. IoT may open only AirPlay
+      # return connections to Trusted, so it has no use for Trusted's services.
+      clients = [ "bond0.20" ];
+      devices = [ "bond0.40" ];
+      services = [
+        "_hap._tcp"
+        "_hap._udp"
+        "_airplay._tcp"
+        "_raop._tcp"
+        "_ipp._tcp"
+        "_printer._tcp"
+        "_companion-link._tcp"
+      ];
+    }
+    {
+      # Thread border routers, Matter controllers and Matter devices find each
+      # other across Trusted, IoT and the OTBR and controller VLANs.
+      clients = threadMatter;
+      devices = threadMatter;
+      services = [
+        "_meshcop._udp"
+        "_matter._tcp"
+        "_matterc._udp"
+        "_matterd._udp"
+      ];
+    }
+  ];
+  ipv6Only = [
+    "bond0.1100"
+    "bond0.1101"
+  ];
+  # netflector takes one mDNS entry per direction, so grants sharing a client
+  # and device VLAN merge their services.
+  reflectors = lib.foldl' (
+    entries:
+    {
+      clients,
+      devices,
+      services,
+    }:
+    lib.foldl' (
+      entries: client:
+      lib.foldl' (
+        entries: device:
+        let
+          name = "${client}-to-${device}";
+        in
+        if client == device then
+          entries
+        else
+          entries
+          // {
+            ${name} = {
+              source_if = client;
+              target_if = device;
+              mdns = true;
+              mdns_services = lib.unique ((entries.${name}.mdns_services or [ ]) ++ services);
+              address_family =
+                if builtins.elem client ipv6Only || builtins.elem device ipv6Only then "ipv6" else "default";
+            };
+          }
+      ) entries devices
+    ) entries clients
+  ) { } discovery;
+  netflector = pkgs.callPackage ../../packages/netflector/package.nix { };
+  # netflector exits if an interface is absent at startup; it follows later
+  # address changes itself.
+  reflectorLinks = map (interface: "sys-subsystem-net-devices-${interface}.device") (
+    lib.unique (lib.concatMap ({ clients, devices, ... }: clients ++ devices) discovery)
+  );
+  # Parsing needs no interfaces, so conflicting entries fail the build.
+  reflectorConfig =
+    pkgs.runCommand "netflector.toml"
+      {
+        config = (pkgs.formats.toml { }).generate "netflector.toml" { inherit reflectors; };
+      }
+      ''
+        ${lib.getExe netflector} --check-config "$config"
+        cp "$config" "$out"
+      '';
 in
 {
   imports = [ ./service-addresses.nix ];
@@ -78,27 +171,35 @@ in
         action.resumeRetryCount="-1" queue.type="LinkedList" queue.size="10000")
     '';
   };
-  services.avahi = {
-    enable = true;
-    openFirewall = false;
-    settings = {
-      server = {
-        use-ipv4 = true;
-        use-ipv6 = true;
-        allow-interfaces = [
-          "bond0.20"
-          "bond0.40"
-          "bond0.1100"
-          "bond0.1101"
-        ];
-      };
-      reflector = {
-        enable-reflector = true;
-        reflect-filters = "_hap._tcp.local,_hap._udp.local,_airplay._tcp.local,_raop._tcp.local,_ipp._tcp.local,_printer._tcp.local,_companion-link._tcp.local,_meshcop._udp.local,_matterc._udp.local,_matter._tcp.local,_matterd._udp.local";
-      };
+  # netflector captures and re-emits mDNS through packet sockets, which bypass
+  # nftables; it binds no IP port.
+  systemd.services.mdns-reflector = {
+    description = "mDNS reflection between VLAN pairs";
+    wants = reflectorLinks;
+    after = reflectorLinks;
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = (import ./sandbox.nix) // {
+      ExecStart = "${lib.getExe netflector} ${reflectorConfig}";
+      DynamicUser = true;
+      AmbientCapabilities = [ "CAP_NET_RAW" ];
+      CapabilityBoundingSet = [ "CAP_NET_RAW" ];
+      RestrictAddressFamilies = [
+        "AF_UNIX"
+        "AF_INET"
+        "AF_INET6"
+        "AF_NETLINK"
+        "AF_PACKET"
+      ];
+      SocketBindDeny = "any";
+      IPAddressDeny = "any";
+      MemoryHigh = "64M";
+      MemoryMax = "128M";
+      TasksMax = 64;
+      Restart = "always";
+      RestartSec = "2s";
     };
   };
-  # Avahi owns mDNS sockets and reflection; resolved handles unicast DNS.
+  # Resolved must not answer or join mDNS on the reflected VLANs.
   services.resolved.settings.Resolve.MulticastDNS = false;
 
   # Roon discovery broadcasts on UDP 9003 and does not cross VLANs. The relay

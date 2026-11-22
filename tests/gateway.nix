@@ -15,7 +15,7 @@ pkgs.testers.runNixOSTest {
     environment.etc."gateway-dhcp.py".source = ./gateway-dhcp.py;
     environment.etc."gateway-udp.py".source = ./gateway-udp.py;
     networking.useDHCP = false;
-    # Packet fixtures own mDNS sockets; production delegates these to Avahi.
+    # Packet fixtures own mDNS sockets.
     services.resolved.settings.Resolve.MulticastDNS = false;
     boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
     boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
@@ -227,8 +227,8 @@ pkgs.testers.runNixOSTest {
     router.succeed("ip netns exec guest ping -6 -c 1 -W 2 fd00:20::2")
     router.fail("ip netns exec wan ping -6 -c 1 -W 2 fd00:20::2")
 
-    # Unsolicited mDNS replies cover both unicast legs of legacy reflection.
-    # A preceding multicast query must not be required for conntrack acceptance.
+    # The mDNS reflector uses packet sockets, so the firewall keeps no mDNS
+    # allowances: unicast from port 5353 is filtered like any other UDP.
     # Keep fixture prefixes distinct from the harness eth1 subnet (2001:db8:1::/64).
     for zone, interface, prefix in (("thread", "bond0.1100", "fd00:1100"), ("matter", "bond0.1101", "fd00:1101")):
         router.succeed(f"ip netns add {zone}; ip link add {interface} type veth peer name peer; ip link set peer netns {zone}; ip link set {interface} up")
@@ -246,20 +246,18 @@ pkgs.testers.runNixOSTest {
         command = f"python /etc/gateway-udp.py send {source} {sport} {destination} {dport} {payload}"
         router.succeed(f"ip netns exec {namespace} {command}" if namespace else command)
 
-    for zone, v4, v6 in (("trusted", "10.1.2", "fd00:20"), ("iot", "10.1.3", "fd00:40"), ("thread", None, "fd00:1100"), ("matter", None, "fd00:1101")):
-        addresses = [(v6 + "::1", v6 + "::2")]
-        if v4:
-            addresses.append((v4 + ".1", v4 + (".11" if zone == "trusted" else ".14")))
-        for index, (gateway, client_address) in enumerate(addresses):
-            for namespace, source, destination in ((zone, client_address, gateway), (None, gateway, client_address)):
-                receiver = None if namespace else zone
-                log_path = f"/tmp/mdns-{zone}-{index}-{namespace or 'router'}"
-                udp_server(receiver, destination, 45002, log_path)
-                udp_packet(namespace, source, 5353, destination, 45002, "mdns-reply")
-                router.wait_until_succeeds(f"grep -x mdns-reply {log_path}")
-                udp_packet(namespace, source, 5354, destination, 45002, "wrong-source")
-                router.sleep(1)
-                router.fail(f"grep -x wrong-source {log_path}")
+    for zone, gateway, client_address in (("trusted", "10.1.2.1", "10.1.2.11"), ("iot", "fd00:40::1", "fd00:40::2"), ("thread", "fd00:1100::1", "fd00:1100::2")):
+        for namespace, source, destination in ((zone, client_address, gateway), (None, gateway, client_address)):
+            receiver = None if namespace else zone
+            log_path = f"/tmp/mdns-{zone}-{namespace or 'router'}"
+            udp_server(receiver, destination, 45002, log_path)
+            udp_packet(namespace, source, 5353, destination, 45002, "mdns-reply")
+    router.sleep(1)
+    router.fail("grep -h mdns-reply /tmp/mdns-*-* | grep -q .")
+    # Control: the same Trusted path delivers a permitted service.
+    udp_server(None, "10.1.2.1", 51820, "/tmp/mdns-control")
+    udp_packet("trusted", "10.1.2.11", 45003, "10.1.2.1", 51820, "control")
+    router.wait_until_succeeds("grep -x control /tmp/mdns-control")
 
     # TCP and UDP encrypted DNS are denied on WAN for both address families.
     for address in ("198.18.0.2", "2001:db8:ffff::2"):

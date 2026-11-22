@@ -175,7 +175,8 @@ primary.succeed("networkctl reconfigure bond0.1100")
 advertise()
 primary.wait_until_succeeds("ip -6 route show fd42:dfb5:24e4:1::/64 | grep bond0.1100")
 
-primary.wait_for_unit("avahi-daemon.service")
+primary.wait_for_unit("mdns-reflector.service")
+matter = "python /etc/gateway-matter.py"
 for namespace in ("thread", "matter", "iot"):
     client.succeed(f"ip netns exec {namespace} python /etc/gateway-matter.py mdns-listen peer /tmp/{namespace}-mdns >/tmp/{namespace}-mdns.log 2>&1 &")
     client.wait_until_succeeds(f"test -e /tmp/{namespace}-mdns")
@@ -186,5 +187,15 @@ client.succeed("python /etc/gateway-matter.py mdns-announce trusted _unlisted._t
 client.sleep(2)
 for namespace in ("thread", "matter", "iot"):
     client.fail(f"grep -q unlisted /tmp/{namespace}-mdns")
-primary.succeed("systemctl restart avahi-daemon; networkctl reload")
-primary.fail("journalctl -b -u systemd-networkd -u frr -u avahi-daemon --no-pager | grep -E 'Unknown (key|section|command)|Failed to parse|Invalid configuration'")
+
+# Apple Home and AirPlay services cross only from IoT devices to Trusted clients.
+client.succeed(f"{matter} mdns-listen trusted /tmp/trusted-mdns >/tmp/trusted-mdns.log 2>&1 &")
+client.wait_until_succeeds("test -e /tmp/trusted-mdns")
+client.succeed(f"ip netns exec iot {matter} mdns-announce peer _airplay._tcp.local")
+client.wait_until_succeeds("grep -q _airplay /tmp/trusted-mdns")
+client.succeed(f"{matter} mdns-announce trusted _hap._tcp.local")
+client.sleep(2)
+client.fail("grep -q _hap /tmp/iot-mdns")
+primary.succeed("systemctl restart mdns-reflector; networkctl reload")
+primary.wait_for_unit("mdns-reflector.service")
+primary.fail("journalctl -b -u systemd-networkd -u frr --no-pager | grep -E 'Unknown (key|section|command)|Failed to parse|Invalid configuration'")

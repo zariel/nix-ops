@@ -48,21 +48,33 @@ def probe(address, source=None):
     assert sock.recv(4096) == b"matter-probe"
 
 
-def mdns_socket(interface):
+def mdns_socket(interface, family="ipv6"):
     index = socket.if_nametoindex(interface)
-    sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    if family == "ipv4":
+        # ROON has no IPv6, so its mDNS uses the IPv4 group.
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        membership = socket.inet_aton("224.0.0.251") + bytes(4) + struct.pack("@i", index)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, membership)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 255)
+        # A namespace must observe reflected copies, not its own transmissions.
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 0)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
+        group = ("224.0.0.251", 5353)
+    else:
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, index)
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, 255)
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP,
+                        socket.inet_pton(socket.AF_INET6, "ff02::fb") + struct.pack("@I", index))
+        group = ("ff02::fb", 5353, 0, index)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, interface.encode())
-    sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, index)
-    sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, 255)
-    sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP,
-                    socket.inet_pton(socket.AF_INET6, "ff02::fb") + struct.pack("@I", index))
-    sock.bind(("::", 5353))
-    return sock, index
+    sock.bind(("0.0.0.0" if family == "ipv4" else "::", 5353))
+    return sock, group
 
 
-def mdns_listen(interface, log):
-    sock, _ = mdns_socket(interface)
+def mdns_listen(interface, log, family="ipv6"):
+    sock, _ = mdns_socket(interface, family)
     Path(log).touch()
     while True:
         data, _ = sock.recvfrom(4096)
@@ -70,13 +82,13 @@ def mdns_listen(interface, log):
             output.write(repr(data) + "\n")
 
 
-def mdns_announce(interface, service):
-    sock, index = mdns_socket(interface)
+def mdns_announce(interface, service, family="ipv6"):
+    sock, group = mdns_socket(interface, family)
     name = b"".join(bytes([len(part)]) + part.encode() for part in service.split(".")) + b"\0"
     target = b"\x05probe" + name
     packet = (struct.pack("!6H", 0, 0x8400, 0, 1, 0, 0) + name
               + struct.pack("!HHIH", 12, 1, 120, len(target)) + target)
-    sock.sendto(packet, ("ff02::fb", 5353, 0, index))
+    sock.sendto(packet, group)
 
 
 if __name__ == "__main__":

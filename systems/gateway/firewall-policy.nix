@@ -57,14 +57,6 @@ let
     verdict = "drop";
     comment = "Block encrypted DNS";
   };
-  mdnsReply = udp {
-    sport = 5353;
-    dport = {
-      from = 1024;
-      to = 65535;
-    };
-    comment = "Avahi unicast replies";
-  };
   ssh = tcp {
     dport = 22;
     comment = "SSH";
@@ -208,18 +200,12 @@ in
         dport = 80;
         comment = "PXE boot assets";
       })
-      mdnsReply
       dhcp
       ntp4
       {
         l4proto = "igmp";
         comment = "Multicast membership";
       }
-      (udp {
-        daddr = "224.0.0.251";
-        dport = 5353;
-        comment = "mDNS";
-      })
     ];
     iot.to.servers = [
       (tcp {
@@ -318,16 +304,10 @@ in
       }
     ];
     local.to.iot = [
-      mdnsReply
       {
         l4proto = "igmp";
         comment = "Multicast membership";
       }
-      (udp {
-        daddr = "224.0.0.251";
-        dport = 5353;
-        comment = "mDNS";
-      })
     ];
     local.to.servers = [
       dns
@@ -365,7 +345,6 @@ in
       icmp4
     ];
     local.to.trusted = [
-      mdnsReply
       {
         l4proto = 112;
         saddr = "10.1.2.5";
@@ -377,11 +356,6 @@ in
         l4proto = "igmp";
         comment = "Multicast membership";
       }
-      (udp {
-        daddr = "224.0.0.251";
-        dport = 5353;
-        comment = "mDNS";
-      })
       (udp {
         sport = 51820;
         comment = "WireGuard";
@@ -666,7 +640,6 @@ in
         dport = 80;
         comment = "PXE boot assets";
       })
-      mdnsReply
       {
         l4proto = 112;
         saddr = "10.1.2.6";
@@ -681,11 +654,6 @@ in
         l4proto = "igmp";
         comment = "Multicast membership";
       }
-      (udp {
-        daddr = "224.0.0.251";
-        dport = 5353;
-        comment = "mDNS";
-      })
       (udp {
         daddr = "255.255.255.255";
         dport = 9;
@@ -772,18 +740,12 @@ in
       }))
       {
         iot.to.local = [
-          mdnsReply
           (icmpv6 {
             icmpv6Type = "nd-router-advert";
             verdict = "drop";
             comment = "Ignore IoT router advertisements";
           })
           icmp6
-          (udp {
-            daddr = "ff02::fb";
-            dport = 5353;
-            comment = "mDNS";
-          })
         ];
         iot.to.transit = [
           icmp6
@@ -793,29 +755,17 @@ in
           accept
         ];
         local.to.iot = [
-          mdnsReply
           icmp6
-          (udp {
-            daddr = "ff02::fb";
-            dport = 5353;
-            comment = "mDNS";
-          })
         ];
         local.to.transit = [
           icmp6
         ];
         local.to.trusted = [
-          mdnsReply
           icmp6
           (udp {
             dport = 546;
             sport = 547;
             comment = "DHCPv6 client";
-          })
-          (udp {
-            daddr = "ff02::fb";
-            dport = 5353;
-            comment = "mDNS";
           })
         ];
         local.to.wan = [
@@ -861,13 +811,7 @@ in
         ++ icmp6Errors;
         transit.to.local = [ accept ];
         trusted.to.local = [
-          mdnsReply
           icmp6
-          (udp {
-            daddr = "ff02::fb";
-            dport = 5353;
-            comment = "mDNS";
-          })
           ssh
         ];
         trusted.to.transit = [
@@ -878,7 +822,6 @@ in
           accept
         ];
         thread.to.local = [
-          mdnsReply
           (icmpv6 {
             icmpv6Type = "nd-router-advert";
             saddr = "fe80::892:17ff:febd:446e";
@@ -891,38 +834,15 @@ in
             comment = "Ignore other infrastructure router advertisements";
           })
           icmp6
-          (udp {
-            daddr = "ff02::fb";
-            dport = 5353;
-            comment = "mDNS";
-          })
         ];
         local.to.thread = [
-          mdnsReply
           icmp6
-          (udp {
-            daddr = "ff02::fb";
-            dport = 5353;
-            comment = "mDNS";
-          })
         ];
         matter.to.local = [
-          mdnsReply
           icmp6
-          (udp {
-            daddr = "ff02::fb";
-            dport = 5353;
-            comment = "mDNS";
-          })
         ];
         local.to.matter = [
-          mdnsReply
           icmp6
-          (udp {
-            daddr = "ff02::fb";
-            dport = 5353;
-            comment = "mDNS";
-          })
         ];
         matter.to.thread = [
           icmp6

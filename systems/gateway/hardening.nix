@@ -187,14 +187,6 @@ in
         MemoryMax = "128M";
       };
     };
-    avahi-daemon = lib.mkIf config.services.avahi.enable {
-      serviceConfig = {
-        LimitCORE = 0;
-        TasksMax = 128;
-        MemoryHigh = "64M";
-        MemoryMax = "128M";
-      };
-    };
     prometheus-node-exporter = lib.mkIf config.services.prometheus.exporters.node.enable {
       serviceConfig = {
         # The timex collector reads adjtimex; the empty capability set forbids clock changes.
