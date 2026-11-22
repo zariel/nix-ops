@@ -224,10 +224,7 @@ in
       "10.1.2.57"
     ];
     plex_clients = addressSet [ "10.1.3.16" ];
-    snmp_targets = addressSet [
-      "10.1.0.10"
-      "10.1.0.31"
-    ];
+    snmp_targets = addressSet [ "10.1.0.31" ];
     dns_servers = addressSet [ "10.254.53.0/24" ];
     routed_servers = addressSet [ "10.254.0.0/16" ];
     load_balancers = addressSet [ "10.45.0.0/24" ];

@@ -33,7 +33,7 @@ primary on the shared network; they must not run with the same node address.
   serve persistent secondary copies through the DNS VIP.
   Reservations are ordinary Nix entries
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
-  All 59 live reservations are included, including MACs used in different VLANs.
+  All 55 live reservations are included, including MACs used in different VLANs.
 - Chrony, node-exporter, FRR, Matchbox 0.11.0 and the discovery reflector run
   as native systemd services. There are no application containers on this
   gateway. UniFi OS Server runs separately on pve2 VM 203 at `10.1.0.23`.
