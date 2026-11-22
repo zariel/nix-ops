@@ -4,6 +4,13 @@ let
   dhcpDns = import ../../roles/dhcp-dns/settings.nix { inherit lib; };
   network = import ../../lib/network.nix;
   rock = builtins.elemAt (import ./reservations.nix).roon.rock 1;
+  bluesoundPlayers = map (reservation: builtins.elemAt reservation 1) (
+    with (import ./reservations.nix).roon;
+    [
+      bluesound-node2i
+      blusound-flex-mini-office
+    ]
+  );
   inherit (import ./firewall-helpers.nix)
     addressSet
     portSet
@@ -491,6 +498,22 @@ in
     ];
     servers.to.wan = [ accept ];
     transit.to.iot = [ icmp4 ];
+    # Pod addresses are not masqueraded, so Home Assistant reaches ROON devices
+    # from the pod network.
+    transit.to.roon = [
+      (tcp {
+        saddr = setRef "transit_pods";
+        daddr = rock;
+        dport = 9330;
+        comment = "Pod access to the Roon Core API";
+      })
+      (tcp {
+        saddr = setRef "transit_pods";
+        daddr = bluesoundPlayers;
+        dport = 11000;
+        comment = "Pod access to the Bluesound players";
+      })
+    ];
     transit.to.lan = [
       (tcp {
         saddr = setRef "transit_pods";
