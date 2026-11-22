@@ -129,6 +129,9 @@ in
             iifname "wan0" meta nfproto ipv4 fib saddr oif missing counter drop
             ct state invalid drop
             ct state established,related accept
+            # The OOB port is in no zone. Input from a VRF member is seen on the VRF
+            # device, so this admits SSH arriving on rescue0 and nothing else.
+            iifname "vrf-oob" meta nfproto ipv4 tcp dport 22 accept
             ${dispatch "input"}
           }
           chain forward {
@@ -150,6 +153,10 @@ in
               meta skuid "matchbox" counter drop
             ''}
             oifname "lo" accept
+            # Packets leaving through a VRF also pass this hook a second time,
+            # untracked, with the VRF device as their output interface. The pass
+            # on rescue0 itself is still filtered below, so only replies leave.
+            oifname "vrf-oob" accept
             ct state invalid drop
             ct state established,related accept
             # DHCP replies and router advertisements bypass per-zone output rules.

@@ -45,6 +45,7 @@ pkgs.testers.runNixOSTest {
       1
       2
       3
+      4
     ];
     # QEMU fixture names replace physical MAC matching; production names and
     # all network/netdev definitions are exercised unchanged.
@@ -53,6 +54,7 @@ pkgs.testers.runNixOSTest {
       "10-lan1".matchConfig = lib.mkForce { OriginalName = "eth1"; };
       "10-spare0".matchConfig = lib.mkForce { OriginalName = "eth2"; };
       "10-wan0".matchConfig = lib.mkForce { OriginalName = "eth3"; };
+      "10-rescue0".matchConfig = lib.mkForce { OriginalName = "eth4"; };
     };
     systemd.services.systemd-networkd.after = [ "systemd-tmpfiles-setup.service" ];
     systemd.network.netdevs."20-wg01".wireguardConfig.PrivateKeyFile = "/var/lib/gateway/wireguard.key";
@@ -81,6 +83,13 @@ pkgs.testers.runNixOSTest {
     links.succeed("test -z \"$(ip -o link show | grep 'bond0.140')\"")
     links.succeed("tc qdisc show dev ifb0 | grep 'cake.*bandwidth 900Mbit.*ingress'")
     links.succeed("wg show wg01 peers | wc -l | grep 3")
+    # The OOB port lives only in its VRF: the main table never learns the OOB
+    # prefix from it, and sshd can accept connections through it.
+    links.wait_until_succeeds("ip -4 addr show dev rescue0 | grep 10.1.254.50/24", timeout=30)
+    links.succeed("ip -d link show rescue0 | grep -q 'master vrf-oob'")
+    links.succeed("ip route show vrf vrf-oob | grep -q '^default via 10.1.254.1 dev rescue0'")
+    links.succeed("test -z \"$(ip route show table main 10.1.254.0/24)\"")
+    links.succeed("test \"$(cat /proc/sys/net/ipv4/tcp_l3mdev_accept)\" = 1")
     links.fail("journalctl -b -u systemd-networkd --no-pager | grep -E 'Unknown (key|section)|Failed to parse|Failed to read|Invalid argument'")
     links.succeed("networkctl reload")
     links.succeed("ip link show bond0.3001; wg show wg01")
@@ -342,6 +351,34 @@ pkgs.testers.runNixOSTest {
     router.succeed("vtysh -c 'show bgp ipv4 unicast summary json' > /tmp/bgp.json")
     bgp = json.loads(router.succeed("cat /tmp/bgp.json"))
     assert set(bgp["peers"]) == {"10.254.0.1", "10.1.1.110", "10.1.1.111", "10.1.1.112"}
+
+    # Trusted LAN clients reach OOB devices behind the core; WireGuard peers,
+    # although in the same zone, do not.
+    router.succeed("ip netns exec transit ip addr add 10.1.254.10/32 dev lo; ip route add 10.1.254.0/24 via 10.254.0.1")
+    router.succeed("ip netns exec transit python -m http.server 8443 --bind 10.1.254.10 >/tmp/oob.log 2>&1 &")
+    router.wait_until_succeeds("ip netns exec transit ss -H -ltn sport = :8443 | grep -q .")
+    client("wireguard", "wg01", "10.0.11.1", "10.0.11.4")
+    router.succeed("ip netns exec trusted curl -fsS --max-time 2 http://10.1.254.10:8443")
+    router.fail("ip netns exec wireguard curl -fsS --max-time 2 http://10.1.254.10:8443")
+
+    # The OOB port is host-only. A namespace standing in for Beefchunk reaches
+    # SSH on the gateway through vrf-oob, but no other local service, and the
+    # gateway forwards nothing for it. The listener on port 22 stands in for
+    # sshd, bound in the default VRF as sshd is.
+    router.succeed("sysctl -w net.ipv4.tcp_l3mdev_accept=1")
+    router.succeed("ip link add vrf-oob type vrf table 1254; ip link set vrf-oob up")
+    router.succeed("ip netns add oob; ip link add rescue0 type veth peer name peer; ip link set peer netns oob")
+    router.succeed("ip link set rescue0 master vrf-oob; ip address add 10.1.254.50/24 dev rescue0; ip link set rescue0 up")
+    router.succeed("ip route add default via 10.1.254.1 vrf vrf-oob")
+    router.succeed("ip netns exec oob ip link set lo up; ip netns exec oob ip link set peer up")
+    router.succeed("ip netns exec oob ip address add 10.1.254.1/24 dev peer")
+    router.succeed("ip netns exec oob ip route add 10.1.0.0/16 via 10.1.254.50")
+    for port in (22, 8082):
+        router.succeed(f"python -m http.server {port} --bind 0.0.0.0 >/tmp/oob-{port}.log 2>&1 &")
+        router.wait_until_succeeds(f"ss -H -ltn sport = :{port} | grep -q .")
+    router.succeed("ip netns exec oob curl -fsS --max-time 2 http://10.1.254.50:22")
+    router.fail("ip netns exec oob curl -fsS --max-time 2 http://10.1.254.50:8082")
+    router.fail("ip netns exec oob curl -fsS --max-time 2 http://10.1.2.11:8080")
 
     # Reload policy while a TCP connection carries traffic. nft's transaction
     # must neither flush conntrack nor open a fail-open window between commands.

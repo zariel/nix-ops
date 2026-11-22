@@ -71,6 +71,9 @@ in
     "net.ipv4.conf.default.send_redirects" = 0;
     "net.ipv4.ip_forward_use_pmtu" = 1;
     "net.ipv4.tcp_mtu_probing" = 1;
+    # sshd listens in the default VRF; this lets it accept connections that
+    # arrive through vrf-oob, and replies leave through the VRF.
+    "net.ipv4.tcp_l3mdev_accept" = 1;
   };
   systemd.network = {
     enable = true;
@@ -110,6 +113,13 @@ in
       "20-ifb0".netdevConfig = {
         Name = "ifb0";
         Kind = "ifb";
+      };
+      "20-vrf-oob" = {
+        netdevConfig = {
+          Name = "vrf-oob";
+          Kind = "vrf";
+        };
+        vrfConfig.Table = 1254;
       };
       "20-wg01" = {
         netdevConfig = {
@@ -201,11 +211,35 @@ in
         };
       };
       "30-spares" = {
-        matchConfig.Name = "spare0 rescue0";
+        matchConfig.Name = "spare0";
         networkConfig = {
           DHCP = "no";
           LinkLocalAddressing = "no";
           IPv6AcceptRA = false;
+        };
+        linkConfig.RequiredForOnline = "no";
+      };
+      # The onboard NIC is the gateway's out-of-band port: a host on the OOB
+      # network, cabled only for cutover and maintenance. Its VRF keeps the OOB
+      # routes out of the main table; the firewall admits only SSH through it
+      # and forwards nothing to or from it.
+      "30-rescue0" = {
+        matchConfig.Name = "rescue0";
+        address = [ "10.1.254.50/24" ];
+        routes = [ { Gateway = "10.1.254.1"; } ];
+        networkConfig = {
+          VRF = "vrf-oob";
+          DHCP = "no";
+          LinkLocalAddressing = "no";
+          IPv6AcceptRA = false;
+        };
+        linkConfig.RequiredForOnline = "no";
+      };
+      "30-vrf-oob" = {
+        matchConfig.Name = "vrf-oob";
+        networkConfig = {
+          ConfigureWithoutCarrier = true;
+          LinkLocalAddressing = "no";
         };
         linkConfig.RequiredForOnline = "no";
       };

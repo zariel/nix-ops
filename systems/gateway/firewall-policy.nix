@@ -773,6 +773,12 @@ in
         daddr = setRef "dns_servers";
         comment = "DNS servers";
       }
+      # WireGuard peers share the trusted zone but must not reach OOB.
+      {
+        saddr = "10.1.2.0/24";
+        daddr = "10.1.254.0/24";
+        comment = "Trusted LAN to OOB";
+      }
       (tcp {
         daddr = setRef "k8s_nodes";
         dport = setRef "node_management";
