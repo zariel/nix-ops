@@ -1,7 +1,8 @@
 # Gateway migration
 
 `nixosConfigurations.gateway` ports the running VyOS gateway inspected on
-2026-10-26, reconciled with `../vyos-config` main `760dcac3` on 2026-11-14.
+2026-10-26, reconciled with `../vyos-config` main `760dcac3` on 2026-11-14. The ROON
+network follows `f2e26b96` and, for ROON, the IPv4 ping policy of `b11e4c9b`.
 Selected live addresses and firewall rules were verified over SSH on 2026-11-14.
 The live configuration takes precedence when preparing cutover.
 No installation or activation is performed by adding this host.
@@ -50,7 +51,7 @@ JSON configuration and manages the service and state directory. Reservations
 remain scoped to their subnet, and client classes select PXE boot files and
 UniFi discovery options. No SQL database or HTTP control API is enabled.
 `services.atftpd` serves the boot assets from `/var/lib/tftpboot`.
-Kea waits for its five LAN interfaces through networkd's per-interface readiness
+Kea waits for its six LAN interfaces through networkd's per-interface readiness
 units; it does not wait for the WAN or unused ports.
 
 ## Host service addresses
@@ -166,7 +167,7 @@ References: [systemd execution restrictions](https://www.freedesktop.org/softwar
 ## DHCP DNS
 
 The gateway is the writable primary for `dhcp.cbannister.casa` and the reverse
-zones of its five DHCPv4 networks. Kea D2 submits authenticated updates over
+zones of its six DHCPv4 networks. Kea D2 submits authenticated updates over
 loopback. Each DNS VM transfers these zones from `10.5.0.53` and answers
 queries from its local persistent copy. DHCP advertises `10.254.253.53`;
 direct access to `172.53.53.53` remains permitted during migration.
@@ -185,6 +186,10 @@ There are no hardcoded PTR records. A reservation gets a PTR when it obtains a
 lease; an offline reservation or a device configured with a static address does
 not get a PTR from this mechanism. The obsolete `10.1.8.0/24` reverse zone is
 removed. SLAAC and Thread addresses are outside this DHCPv4 integration.
+ROON's static reverse zone is also replaced by the replicated DHCP zone. The Roon
+devices keep their static `cbannister.casa` A records, such as
+`rock.cbannister.casa`, while their PTRs name lease records such as
+`rock.roon.dhcp.cbannister.casa`.
 
 The primary sends zone notifications to all three DNS VMs. A gateway outage
 stops changes, but existing secondary copies remain authoritative for up to
@@ -394,6 +399,15 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   through the ICX. ISP global prefixes are not advertised to LANs. The planned
   /56 delegation settings remain provisioned; verify the lease/prefix when
   enabling WAN IPv6 because a new DHCPv6 DUID can change the ISP allocation.
+- ROON (VLAN 60, `10.1.4.0/24`) is IPv4-only, as on VyOS: it has no link-local
+  address or IPv6 forwarding, and every IPv6 pair involving the zone is denied.
+  Its DHCP pool ends at `.239`. As on VyOS, its DNS is not intercepted; the zone
+  may reach only `10.254.253.53`, not the legacy resolver address. The Trusted
+  LAN restrictions for ROCK web administration and Remote control match the
+  `10.1.2.0/24` source prefix instead of `bond0.20`; WireGuard AllowedIPs keep
+  peers outside that prefix, so only ARC is reachable over WireGuard. Pings from
+  ROON to the gateway are not rate limited, unlike VyOS's 10/second limit;
+  the rule helpers have no rate-limit field.
 - DNS interception redirects IPv4 trusted, IoT and WireGuard requests to
   `10.254.253.53`, exempting both IPv4 DNS VIPs. IPv6 DNS interception is removed.
   Trusted and IoT WAN policy blocks TCP and UDP port 853 for both families.
@@ -413,7 +427,7 @@ an outage for its initial OS replacement and eventual kernel maintenance.
 - Node exporter listens only on `10.5.0.11`. Routed pod access includes PDU
   and IPMI HTTPS certificate uploads, UniFi controller HTTPS at `10.1.0.23` and
   the existing Proxmox management ports.
-- IPv4 PIM is passive on trusted and IoT, matching VyOS: FRR remains the IGMP
+- IPv4 PIM is passive on trusted, IoT and ROON, matching VyOS: FRR remains the IGMP
   querier without PIM neighbor discovery. There are no PIM neighbors, and the
   output policy does not permit PIM control traffic in any case.
 - The pinned kernel is 6.18.63, newer than the 6.18.56 fix for
@@ -477,7 +491,7 @@ Before the first NixOS boot:
    HTTP boot URL. The source repository does not contain these stateful assets.
 5. Account for existing dynamic DHCP leases before starting a fresh DHCP server.
    Import active leases into Kea's memfile format with the configured subnet
-   IDs (10 servers, 20 trusted, 30 guest, 40 IoT, 100 management), or temporarily
+   IDs (10 servers, 20 trusted, 30 guest, 40 IoT, 60 ROON, 100 management), or temporarily
    reserve their addresses. Do not copy an ISC or dnsmasq lease file into Kea.
    Back up and retain `/var/lib/kea` across subsequent NixOS deployments.
    There must be only one authoritative DHCP server during cutover.

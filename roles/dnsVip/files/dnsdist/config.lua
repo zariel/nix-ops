@@ -160,9 +160,6 @@ addAction(QNameSuffixRule('mask-h2.icloud.com'), ERCodeAction(DNSRCode.NXDOMAIN)
 -- Lease names and reverse zones are answered from this node's local replicas.
 addAction(@DHCP_ZONES@, PoolAction('bind'))
 
--- ROON is not yet a gateway DHCP network; its reverse zone is static in bind.
-addAction('4.1.10.in-addr.arpa', PoolAction('bind'))
-
 -- OOB devices are statically addressed; their reverse zone is static in bind.
 addAction('254.1.10.in-addr.arpa', PoolAction('bind'))
 

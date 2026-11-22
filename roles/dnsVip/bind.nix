@@ -92,11 +92,6 @@ in
           file = ./files/bind/zones/db.unifi;
         };
 
-        # ROON is not yet a gateway DHCP network, so its reverse zone stays static.
-        "4.1.10.in-addr.arpa" = {
-          master = true;
-          file = ./files/bind/zones/db.4.1.10.in-addr.arpa;
-        };
         # OOB devices are statically addressed and never use DHCP, so this zone
         # stays a static master after the gateway takes over the DHCP networks.
         "254.1.10.in-addr.arpa" = {

@@ -156,7 +156,7 @@ in
             # DHCP replies and router advertisements bypass per-zone output rules.
             oifname "wan0" meta nfproto ipv4 udp sport 68 udp dport 67 accept
             oifname "wan0" meta nfproto ipv6 udp sport 546 udp dport 547 accept
-            oifname { "bond0.10", "bond0.20", "bond0.30", "bond0.40", "bond0.100" } udp sport 67 udp dport 68 accept
+            oifname { "bond0.10", "bond0.20", "bond0.30", "bond0.40", "bond0.60", "bond0.100" } udp sport 67 udp dport 68 accept
             oifname { "bond0.20", "bond0.40" } meta l4proto ipv6-icmp accept
             # Kernel log collector is routed through transit, not the servers VLAN.
             oifname "bond0.3001" ip daddr 10.45.0.2 tcp dport 6001 accept

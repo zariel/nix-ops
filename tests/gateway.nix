@@ -73,6 +73,10 @@ pkgs.testers.runNixOSTest {
     links.wait_for_unit("gateway-cake.service")
     links.wait_until_succeeds("ip link show wg01", timeout=30)
     links.succeed("ip -d link show bond0.3001 | grep 'id 3001'")
+    # ROON is IPv4-only, unlike IoT on the same bond.
+    links.wait_until_succeeds("ip -4 addr show dev bond0.60 | grep 10.1.4.1/24", timeout=30)
+    links.wait_until_succeeds("ip -6 addr show dev bond0.40 | grep fe80::", timeout=30)
+    links.succeed("test -z \"$(ip -6 addr show dev bond0.60)\"; test \"$(cat /proc/sys/net/ipv6/conf/bond0.60/forwarding)\" = 0")
     links.succeed("grep 802.3ad /sys/class/net/bond0/bonding/mode")
     links.succeed("test -z \"$(ip -o link show | grep 'bond0.140')\"")
     links.succeed("tc qdisc show dev ifb0 | grep 'cake.*bandwidth 900Mbit.*ingress'")
@@ -101,6 +105,7 @@ pkgs.testers.runNixOSTest {
 
     client("trusted", "bond0.20", "10.1.2.1", "10.1.2.11")
     client("iot", "bond0.40", "10.1.3.1", "10.1.3.14")
+    client("roon", "bond0.60", "10.1.4.1", "10.1.4.10")
     client("guest", "bond0.30", "192.168.2.1", "192.168.2.11")
     client("servers", "bond0.10", "10.1.1.1", "10.1.1.31")
     client("lan", "bond0.100", "10.1.0.1", "10.1.0.22")
@@ -135,11 +140,46 @@ pkgs.testers.runNixOSTest {
     for zone in ("trusted", "iot"):
         router.fail(f"ip netns exec {zone} curl -fsS --max-time 2 http://198.18.0.2:853")
         router.succeed(f"ip netns exec {zone} curl -fsS --max-time 2 http://198.18.0.2:8080")
-    router.succeed("ip netns exec trusted ip addr add 10.1.2.60/24 dev peer")
-    router.succeed("ip netns exec trusted python -m http.server 59453 --bind 10.1.2.60 >/tmp/roon.log 2>&1 &")
-    router.wait_until_succeeds("ip netns exec trusted curl -fsS --max-time 2 http://10.1.2.60:59453")
+
+    # Trusted LAN clients control ROCK; ARC is also reachable from other trusted
+    # sources such as WireGuard peers, but never from WAN.
+    for port in (80, 59453, 9330, 9331, 9332):
+        router.succeed(f"ip netns exec roon python -m http.server {port} --bind 10.1.4.10 >/tmp/rock-{port}.log 2>&1 &")
+    for port in (80, 59453, 9330, 9332):
+        router.wait_until_succeeds(f"ip netns exec trusted curl -fsS --max-time 2 http://10.1.4.10:{port}")
+    for port in (8080, 9331):
+        router.fail(f"ip netns exec trusted curl -fsS --max-time 2 http://10.1.4.10:{port}")
+    router.succeed("ip netns exec trusted ip addr add 10.0.11.5/32 dev peer; ip route add 10.0.11.5/32 dev bond0.20")
+    router.succeed("ip netns exec trusted curl --interface 10.0.11.5 -fsS --max-time 2 http://10.1.4.10:59453")
+    for port in (80, 9330):
+        router.fail(f"ip netns exec trusted curl --interface 10.0.11.5 -fsS --max-time 2 http://10.1.4.10:{port}")
+    router.succeed("ip netns exec trusted ip addr del 10.0.11.5/32 dev peer; ip route del 10.0.11.5/32 dev bond0.20")
+    router.fail("ip netns exec iot curl -fsS --max-time 2 http://10.1.4.10:59453")
     router.fail("ip netns exec wan curl -fsS --max-time 2 http://198.18.0.1:59453")
-    router.fail("ip netns exec wan curl -fsS --max-time 2 http://10.1.2.60:59453")
+    router.fail("ip netns exec wan curl -fsS --max-time 2 http://10.1.4.10:59453")
+
+    # ROON reaches the resolver VIP, ROCK's music library and web services only.
+    router.succeed("ip netns exec roon ip addr add 10.1.4.11/24 dev peer")
+    router.succeed("ip netns exec transit ip addr add 10.254.1.101/32 dev lo; ip route add 10.254.1.101/32 via 10.254.0.1")
+    for port in (445, 8080):
+        router.succeed(f"ip netns exec transit python -m http.server {port} --bind 10.254.1.101 >/tmp/storage-{port}.log 2>&1 &")
+    router.wait_until_succeeds("ip netns exec roon curl --interface 10.1.4.10 -fsS --max-time 2 http://10.254.1.101:445")
+    router.fail("ip netns exec roon curl --interface 10.1.4.11 -fsS --max-time 2 http://10.254.1.101:445")
+    router.fail("ip netns exec roon curl --interface 10.1.4.10 -fsS --max-time 2 http://10.254.1.101:8080")
+    router.succeed("ip netns exec roon curl -fsS --max-time 2 http://10.254.253.53:53/identity | grep -x preferred")
+    router.fail("ip netns exec roon curl -fsS --max-time 2 http://172.53.53.53:53/identity")
+    router.succeed("ip netns exec roon curl -fsS --max-time 2 http://198.18.0.2:443")
+    router.fail("ip netns exec roon curl -fsS --max-time 2 http://198.18.0.2:8080")
+    for address in ("10.1.2.11", "10.1.3.14", "10.1.1.31", "10.1.0.22"):
+        router.fail(f"ip netns exec roon curl -fsS --max-time 2 http://{address}:8080")
+
+    # Only the gateway and Trusted may ping ROON; ROON may ping only the gateway.
+    router.succeed("ping -c 1 -W 2 10.1.4.10")
+    router.succeed("ip netns exec trusted ping -c 1 -W 2 10.1.4.10")
+    router.fail("ip netns exec servers ping -c 1 -W 2 10.1.4.10")
+    router.succeed("ip netns exec roon ping -c 1 -W 2 10.1.4.1")
+    router.fail("ip netns exec roon ping -c 1 -W 2 10.1.2.11")
+
     router.succeed("ip netns exec transit ip addr add 10.45.0.24/32 dev lo; ip route add 10.45.0.24/32 via 10.254.0.1")
     router.succeed("ip netns exec transit python -m http.server 50413 --bind 10.45.0.24 >/tmp/torrent.log 2>&1 &")
     router.wait_until_succeeds("ip netns exec wan curl -fsS --max-time 2 http://198.18.0.1:50413")
@@ -170,6 +210,7 @@ pkgs.testers.runNixOSTest {
     for zone, interface, prefix in (
         ("trusted", "bond0.20", "fd00:20"),
         ("iot", "bond0.40", "fd00:40"),
+        ("roon", "bond0.60", "fd00:60"),
         ("guest", "bond0.30", "fd00:30"),
         ("servers", "bond0.10", "fd00:10"),
         ("transit", "bond0.3001", "fd00:3001"),
@@ -182,6 +223,9 @@ pkgs.testers.runNixOSTest {
 
     router.fail("ip netns exec trusted curl -gfsS --max-time 2 http://[fd00:10::2]:8081")
     router.fail("ip netns exec guest curl -gfsS --max-time 2 http://[fd00:20::2]:8081")
+    # ROON is IPv4-only, so even ICMPv6 to and from it is denied.
+    router.fail("ip netns exec trusted ping -6 -c 1 -W 2 fd00:60::2")
+    router.fail("ip netns exec roon ping -6 -c 1 -W 2 fd00:20::2")
     router.succeed("ip netns exec guest ping -6 -c 1 -W 2 fd00:20::2")
     router.fail("ip netns exec wan ping -6 -c 1 -W 2 fd00:20::2")
 
@@ -250,11 +294,11 @@ pkgs.testers.runNixOSTest {
 
     # Check reservations, pool options, vendor discovery and boot selection
     # through actual DHCP exchanges, then repeat after reloading and restarting.
-    for zone in ("servers", "trusted", "guest", "iot", "lan"):
+    for zone in ("servers", "trusted", "guest", "iot", "roon", "lan"):
         router.succeed(f"ip netns exec {zone} python /etc/gateway-dhcp.py {zone}")
     router.succeed("systemctl reload kea-dhcp4-server")
     router.succeed("systemctl restart kea-dhcp4-server")
-    for zone in ("servers", "trusted", "guest", "iot", "lan"):
+    for zone in ("servers", "trusted", "guest", "iot", "roon", "lan"):
         router.succeed(f"ip netns exec {zone} python /etc/gateway-dhcp.py {zone}")
 
     # TFTP data connections traverse the conntrack helper rather than opening

@@ -17,6 +17,10 @@ let
       id = 40;
       prefix = "10.1.3";
     };
+    roon = {
+      id = 60;
+      prefix = "10.1.4";
+    };
     lan = {
       id = 100;
       prefix = "10.1.0";

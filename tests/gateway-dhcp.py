@@ -1,6 +1,5 @@
 """Exercise DHCP over the wire from a client network namespace."""
 
-import ipaddress
 import json
 import secrets
 import socket
@@ -14,6 +13,7 @@ prefix, reserved_mac, reserved_ip, ntp, domain = {
     "trusted": ("10.1.2", "48:b0:2d:2b:14:03", "10.1.2.50", True, True),
     "guest": ("192.168.2", "64:4b:f0:37:f6:78", "192.168.2.11", False, False),
     "iot": ("10.1.3", "48:b0:2d:2b:14:03", "10.1.3.16", False, True),
+    "roon": ("10.1.4", "7e:7d:c6:c7:26:ac", "10.1.4.10", True, True),
     "lan": ("10.1.0", "0c:ea:14:e6:16:d5", "10.1.0.22", True, False),
 }[zone]
 
@@ -126,6 +126,13 @@ assert options.get(43) == (bytes.fromhex("01040a010017") if zone == "lan" else N
 _, _, _, options = exchange(reserved_mac)
 assert 43 not in options
 
+pool = {f"{prefix}.{host}" for host in range(200, 240 if zone == "roon" else 255)}
+
+# Roon devices are reserved on ROON only; on Trusted they are ordinary clients.
+if zone == "trusted":
+    address, _, _, _ = exchange("7e:7d:c6:c7:26:ac")
+    assert address in pool, address
+
 # A competing client after restart must not receive an existing dynamic lease.
 lease = Path(f"/tmp/dhcp-{zone}.json")
 if lease.exists():
@@ -133,11 +140,19 @@ if lease.exists():
     other, _, _, _ = exchange("02:00:00:00:00:02")
     assert other != previous
     exchange("02:00:00:00:00:01", requested=previous, client_id=b"changed-client-id")
+
+    # ROON's smaller pool must be exhausted without allocating beyond it.
+    if zone == "roon":
+        allocated = {previous, other}
+        for index in range(len(pool)):
+            try:
+                address, _, _, _ = exchange(f"02:00:00:00:01:{index:02x}")
+            except AssertionError as error:
+                assert str(error).startswith("No DHCP response"), error
+                break
+            allocated.add(address)
+        assert allocated == pool, sorted(allocated ^ pool)
 else:
     address, _, _, _ = exchange("02:00:00:00:00:01")
-    assert (
-        ipaddress.ip_address(prefix + ".200")
-        <= ipaddress.ip_address(address)
-        <= ipaddress.ip_address(prefix + ".254")
-    )
+    assert address in pool, address
     lease.write_text(json.dumps(address))

@@ -28,6 +28,10 @@ let
       ];
       mtu = 1500;
     };
+    "60" = {
+      addresses = [ "10.1.4.1/24" ];
+      mtu = 1500;
+    };
     "100" = {
       addresses = [ "10.1.0.1/24" ];
       mtu = 1500;
@@ -254,6 +258,11 @@ in
           // lib.optionalAttrs (id == "20") {
             # Keepalived owns the floating /24; networkd owns only the node /32.
             KeepConfiguration = "static";
+          }
+          // lib.optionalAttrs (id == "60") {
+            # ROON is IPv4-only: no link-local address and no IPv6 forwarding.
+            LinkLocalAddressing = "no";
+            IPv6Forwarding = false;
           };
         }
         // lib.optionalAttrs (id == "20") {

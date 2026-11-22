@@ -2,6 +2,8 @@
 let
   addresses = (import ../../roles/gateway-services/settings.nix).addresses;
   dhcpDns = import ../../roles/dhcp-dns/settings.nix { inherit lib; };
+  network = import ../../lib/network.nix;
+  rock = builtins.elemAt (import ./reservations.nix).roon.rock 1;
   inherit (import ./firewall-helpers.nix)
     addressSet
     portSet
@@ -21,11 +23,21 @@ let
     ];
     guest = [ "bond0.30" ];
     iot = [ "bond0.40" ];
+    roon = [ "bond0.60" ];
     thread = [ "bond0.1100" ];
     matter = [ "bond0.1101" ];
     transit = [ "bond0.3001" ];
   };
-  internal = lib.filter (zone: zone != "wan") (builtins.attrNames zones) ++ [ "local" ];
+  # ROON is IPv4-only, so all of its IPv6 pairs are denied.
+  internalIpv6 =
+    lib.filter (
+      zone:
+      !builtins.elem zone [
+        "wan"
+        "roon"
+      ]
+    ) (builtins.attrNames zones)
+    ++ [ "local" ];
   accept = {
     verdict = "accept";
   };
@@ -298,6 +310,13 @@ in
       })
     ];
     lan.to.wan = [ accept ];
+    local.to.roon = [
+      icmp4
+      {
+        l4proto = "igmp";
+        comment = "Multicast membership";
+      }
+    ];
     local.to.iot = [
       mdnsReply
       {
@@ -393,6 +412,41 @@ in
           "parameter-problem"
         ];
       }
+    ];
+    roon.to.local = [
+      dhcp
+      ntp4
+      {
+        l4proto = "igmp";
+        comment = "Multicast membership";
+      }
+      {
+        l4proto = "icmp";
+        icmpType = "echo-request";
+        comment = "Ping";
+      }
+    ];
+    roon.to.transit = [
+      (tcpUdp {
+        daddr = network.dnsVip;
+        dport = 53;
+        comment = "DNS";
+      })
+      (tcp {
+        saddr = rock;
+        daddr = setRef "storage";
+        dport = 445;
+        comment = "ROCK music library";
+      })
+    ];
+    roon.to.wan = [
+      (tcp {
+        dport = [
+          80
+          443
+        ];
+        comment = "Music services and firmware updates";
+      })
     ];
     servers.to.lan = [
       (udp {
@@ -641,6 +695,31 @@ in
         comment = "Throughput testing";
       })
     ];
+    # The Trusted LAN prefix excludes WireGuard peers, whose AllowedIPs bind
+    # them to 10.0.11.0/24; only Roon ARC is also available over WireGuard.
+    trusted.to.roon = [
+      icmp4
+      (tcp {
+        saddr = "10.1.2.0/24";
+        daddr = rock;
+        dport = 80;
+        comment = "ROCK web administration";
+      })
+      (tcp {
+        daddr = rock;
+        dport = 59453;
+        comment = "Roon ARC";
+      })
+      (tcp {
+        saddr = "10.1.2.0/24";
+        daddr = rock;
+        dport = [
+          9330
+          9332
+        ];
+        comment = "Roon Remote control";
+      })
+    ];
     trusted.to.servers = [ accept ];
     trusted.to.transit = [
       icmp4
@@ -700,8 +779,8 @@ in
   # error types below, with neighbor discovery additionally allowed to local.
   ipv6 =
     lib.recursiveUpdate
-      (lib.genAttrs internal (source: {
-        to = lib.genAttrs (lib.remove source internal) (_: [ icmp6 ]);
+      (lib.genAttrs internalIpv6 (source: {
+        to = lib.genAttrs (lib.remove source internalIpv6) (_: [ icmp6 ]);
       }))
       {
         iot.to.local = [
@@ -905,7 +984,7 @@ in
           icmp6
           (udp { daddr = "fd74:f571:d3bd:1061::2"; })
         ];
-        wan.to = lib.genAttrs internal (
+        wan.to = lib.genAttrs internalIpv6 (
           destination:
           icmp6Errors
           ++ (

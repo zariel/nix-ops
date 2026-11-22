@@ -71,7 +71,7 @@ pkgs.testers.runNixOSTest {
 
     def network():
         router.succeed("ip link set eth1 name bond0.3001; ip link set bond0.3001 up; ip address add 10.254.254.1/16 dev bond0.3001")
-        for name, vlan, prefix in [("trusted", 20, "10.1.2"), ("guest", 30, "192.168.2"), ("servers", 10, "10.1.1"), ("iot", 40, "10.1.3"), ("lan", 100, "10.1.0")]:
+        for name, vlan, prefix in [("trusted", 20, "10.1.2"), ("guest", 30, "192.168.2"), ("servers", 10, "10.1.1"), ("iot", 40, "10.1.3"), ("roon", 60, "10.1.4"), ("lan", 100, "10.1.0")]:
             router.succeed(f"ip netns add {name}; ip link add bond0.{vlan} type veth peer name peer; ip link set peer netns {name}; ip link set bond0.{vlan} up; ip address add {prefix}.1/24 dev bond0.{vlan}; ip netns exec {name} ip link set lo up; ip netns exec {name} ip link set peer up; ip netns exec {name} ip address add {prefix}.80/24 dev peer")
 
     def lease(zone, mac, hostname="-", action="acquire", state=None):
@@ -95,7 +95,7 @@ pkgs.testers.runNixOSTest {
         answer(node, "gateway-ntp.cbannister.casa A", "10.5.0.10")
 
     # Reservation names take precedence over client input; anonymous leases get
-    # names too. All five production subnets must publish forward and PTR data.
+    # names too. All six production subnets must publish forward and PTR data.
     reserved = lease("trusted", "6c:3a:ff:28:09:e1", "spoofed")
     assert reserved == "10.1.2.10", reserved
     records = [(reserved, "chris-iphone.trusted.dhcp.cbannister.casa.")]
@@ -103,6 +103,9 @@ pkgs.testers.runNixOSTest {
         address = lease(zone, "02:00:00:00:00:01", "laptop" if zone == "guest" else "-")
         label = "laptop" if zone == "guest" else "host-" + address.replace(".", "-")
         records.append((address, f"{label}.{zone}.dhcp.cbannister.casa."))
+    rock = lease("roon", "7e:7d:c6:c7:26:ac", "spoofed")
+    assert rock == "10.1.4.10", rock
+    records.append((rock, "rock.roon.dhcp.cbannister.casa."))
 
     for node in replicas:
         for address, hostname in records:
@@ -110,6 +113,10 @@ pkgs.testers.runNixOSTest {
             answer(node, f"{hostname} A", address)
         node.succeed("dig @127.0.53.10 -x 10.1.2.10 +norecurse | grep 'flags:.*aa'")
         node.succeed("dig @127.0.53.10 2.1.10.in-addr.arpa SOA +short | grep '2592000'")
+        # ROON's reverse zone is a replica like the others; its static forward
+        # records remain independently managed.
+        node.succeed("dig @127.0.53.10 4.1.10.in-addr.arpa SOA +short | grep '2592000'")
+        answer(node, "rock.cbannister.casa A", "10.1.4.10")
 
     # Neither unsigned clients nor the update key can change zone authority.
     router.fail("printf 'server 127.0.0.1\\nzone 2.1.10.in-addr.arpa\\nupdate add 99.2.1.10.in-addr.arpa 60 PTR forged.cbannister.casa.\\nsend\\n' | nsupdate")

@@ -102,7 +102,9 @@ in
         inherit (subnet) id;
         interface = "bond0.${toString subnet.id}";
         subnet = "${subnet.prefix}.0/24";
-        pools = [ { pool = "${subnet.prefix}.200 - ${subnet.prefix}.254"; } ];
+        pools = [
+          { pool = "${subnet.prefix}.200 - ${subnet.prefix}.${if zone == "roon" then "239" else "254"}"; }
+        ];
         valid-lifetime = if zone == "guest" then 3600 else 28800;
         ddns-qualifying-suffix = "${zone}.${dns.domain}";
         reservations = lib.mapAttrsToList (name: values: {
@@ -121,6 +123,7 @@ in
             (builtins.elem zone [
               "servers"
               "trusted"
+              "roon"
               "lan"
             ])
             {
@@ -133,6 +136,7 @@ in
               "servers"
               "trusted"
               "iot"
+              "roon"
             ])
             {
               name = "domain-name";

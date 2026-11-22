@@ -100,7 +100,7 @@ DNSdist performs "lazy" health checks on backends:
    - Reverse DNS zones → Bind
 3. Source IP routing:
    - Trusted/WireGuard networks → Blocky; return SERVFAIL if the Blocky pool is unavailable
-   - Guest/IoT networks → Cloudflare
+   - Guest/IoT/ROON networks → Cloudflare
    - LAN/Servers/K8s overlay networks → Cloudflare
    - Default → Cloudflare
 
@@ -147,7 +147,7 @@ Key points:
   - `unifi` (network management)
   - `dhcp.cbannister.casa` (secondary)
   - Reverse zones for `10.1.0.0/24`, `10.1.1.0/24`, `10.1.2.0/24`,
-    `10.1.3.0/24` and `192.168.2.0/24` (secondaries)
+    `10.1.3.0/24`, `10.1.4.0/24` and `192.168.2.0/24` (secondaries)
 
 The gateway runs the writable BIND primary for DHCP zones at `10.5.0.53`.
 Kea D2 updates it using a SOPS-managed local TSIG credential. Each DNS VM stores its secondary
