@@ -17,11 +17,30 @@ let
   unknown = lib.subtractLists (
     builtins.attrNames fields
     ++ [
+      "limit"
       "verdict"
       "comment"
     ]
   ) (builtins.attrNames rule);
   verdict = rule.verdict or "accept";
+  # A packet-rate limit; packets beyond it fall through to later rules.
+  limit =
+    let
+      inherit (rule) limit;
+    in
+    assert lib.assertMsg (
+      builtins.isAttrs limit
+      &&
+        builtins.attrNames limit == [
+          "burst"
+          "rate"
+        ]
+      && builtins.isString limit.rate
+      && builtins.match "[1-9][0-9]*/(second|minute|hour|day)" limit.rate != null
+      && builtins.isInt limit.burst
+      && limit.burst > 0
+    ) "Gateway firewall limits need a rate such as 10/second and a positive burst.";
+    "limit rate ${limit.rate} burst ${toString limit.burst} packets";
   protocols = lib.toList (rule.l4proto or null);
   token =
     value:
@@ -149,6 +168,7 @@ lib.concatStringsSep " " (
       "hopLimit"
     ]
   )
+  ++ lib.optional (rule ? limit) limit
   ++ [
     "counter"
     verdict

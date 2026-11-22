@@ -2,8 +2,8 @@
 
 `nixosConfigurations.gateway` ports the running VyOS gateway inspected on
 2026-10-26, reconciled with `../vyos-config` main `760dcac3` on 2026-11-14. The ROON
-network follows `a21df908`, the BluOS reflection intent of `9af2b642`, the pod
-access of `17f0c972` and, for ROON, the IPv4 ping policy of `b11e4c9b`.
+network follows `a21df908`, the BluOS reflection intent of `9af2b642` and the pod
+access of `17f0c972`; every zone follows the IPv4 ping policy of `b11e4c9b`.
 Selected live addresses and firewall rules were verified over SSH on 2026-11-14.
 The live configuration takes precedence when preparing cutover.
 No installation or activation is performed by adding this host.
@@ -311,17 +311,29 @@ tcp {
 }
 ```
 
-Rules support `l4proto`, `saddr`, `daddr`, `sport`, `dport`, `icmpv6Type`,
-`verdict` and `comment`. The verdict defaults to `accept`; use `verdict = "drop"`
+Rules support `l4proto`, `saddr`, `daddr`, `sport`, `dport`, `icmpType`,
+`icmpv6Type`, `limit`, `verdict` and `comment`. The verdict defaults to `accept`; use `verdict = "drop"`
 for ordered exclusions. Match values can be single values or lists. Use
 `setRef "k8s_nodes"` for a named set, `{ from = 30000; to = 65535; }` for a
 port range, and `{ mask = "::ffff:ffff:ffff:ffff"; value = "::7c7d:c6ff:fec7:26ac"; }`
 for a masked address match. Port matches require TCP or UDP. Unknown fields
-and invalid port values fail evaluation.
+and invalid port values fail evaluation. `limit = { rate = "10/second"; burst = 20; }`
+limits a rule to that packet rate; packets beyond it fall through to later rules.
 
 Address matches use the entry's IPv4 or IPv6 family. Shared DHCP, DNS, NTP,
-SSH, TFTP and ICMP rules are defined at the top of the policy file. Use
+SSH and TFTP rules are defined at the top of the policy file. Use
 `comment` to describe the service or purpose.
+
+IPv4 pings follow zone trust, as in VyOS's ping policy. `pingTargets` lists
+the zones each zone may ping: the gateway every zone, Trusted every internal
+zone, management, transit and servers the zones they operate, and guest, IoT
+and ROON only the gateway. Each permitted pair gets one echo-request rule ahead
+of its other rules, created if the pair has none; new pings to the gateway are
+limited to 10/second with a burst of 20. As on VyOS, established/related
+handling precedes the zone rules, so it accepts echo replies, the errors that
+path MTU discovery and traceroute rely on, and the later echo requests of a ping
+already answered: the limit applies to new ICMP echo flows, not to every packet.
+Apart from pairs that accept all traffic, no other IPv4 ICMP is permitted.
 
 IPv4 and IPv6 permissions are independent. Omitted zone pairs default to deny,
 and unmatched traffic within a listed pair is dropped. Internal IPv6 pairs
@@ -453,11 +465,9 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   address or IPv6 forwarding, and every IPv6 pair involving the zone is denied.
   Its DHCP pool ends at `.239`. As on VyOS, its DNS is not intercepted; the zone
   may reach only `10.254.253.53`, not the legacy resolver address. Trusted,
-  including WireGuard peers, may reach every ROON device. Pings from ROON to the
-  gateway are not rate limited, unlike VyOS's 10/second limit; the rule helpers
-  have no rate-limit field. Only `_musc._tcp` is reflected from ROON, to Trusted;
-  unlike VyOS's shared Avahi allow-list, ROON neither receives nor emits the
-  Apple, printing, Thread or Matter services, and needs no mDNS firewall rules.
+  including WireGuard peers, may reach every ROON device. Only `_musc._tcp` is
+  reflected from ROON, to Trusted; unlike VyOS's shared Avahi allow-list, ROON
+  neither receives nor emits the Apple, printing, Thread or Matter services.
 - DNS interception redirects IPv4 trusted, IoT and WireGuard requests to
   `10.254.253.53`, exempting both IPv4 DNS VIPs. IPv6 DNS interception is removed.
   Trusted and IoT WAN policy blocks TCP and UDP port 853 for both families.
@@ -467,8 +477,8 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   its permissions for retired gateway applications are removed.
   Kernel warnings are forwarded to the existing TCP syslog collector through rsyslog.
   Drop counters replace VyOS's per-rule logging; inspect `nft list table inet gateway`.
-- WAN router egress allows DHCP, resolver DNS, NTP, HTTPS, WireGuard and selected
-  ICMP/IPv6 link-control traffic. WAN IPv4 source validation is loose to permit
+- WAN router egress allows DHCP, resolver DNS, NTP, HTTPS, WireGuard, pings and
+  IPv6 link-control traffic. WAN IPv4 source validation is loose to permit
   asymmetric routes. Torrent ingress requires TCP destination NAT; public Roon
   ARC access is removed. The live CN/RU transit/WAN policy remains backed by
   the fixed snapshot in `geoip-cn-ru.nft`; refresh it deliberately from a trusted source.

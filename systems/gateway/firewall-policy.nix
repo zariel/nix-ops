@@ -90,10 +90,77 @@ let
     dport = 123;
     comment = "NTP";
   };
-  icmp4 = {
-    l4proto = "icmp";
-    comment = "ICMP";
+  # IPv4 pings follow zone trust: the gateway may ping every zone, Trusted
+  # every internal zone, management, transit and servers the zones they
+  # operate, and restricted zones only the gateway. This decides only who may
+  # start a ping; echo replies and the ICMP errors that path MTU discovery and
+  # traceroute rely on are related traffic. Pings to the gateway are rate
+  # limited.
+  pingTargets = {
+    local = [
+      "wan"
+      "trusted"
+      "lan"
+      "servers"
+      "iot"
+      "roon"
+      "guest"
+      "transit"
+    ];
+    trusted = [
+      "local"
+      "lan"
+      "servers"
+      "iot"
+      "roon"
+      "guest"
+      "transit"
+    ];
+    lan = [
+      "local"
+      "servers"
+      "transit"
+    ];
+    transit = [
+      "local"
+      "trusted"
+      "servers"
+      "lan"
+      "iot"
+    ];
+    servers = [
+      "local"
+      "trusted"
+      "iot"
+      "transit"
+    ];
+    iot = [ "local" ];
+    guest = [ "local" ];
+    roon = [ "local" ];
   };
+  ping =
+    destination:
+    {
+      l4proto = "icmp";
+      icmpType = "echo-request";
+      comment = "Ping";
+    }
+    // lib.optionalAttrs (destination == "local") {
+      limit = {
+        rate = "10/second";
+        burst = 20;
+      };
+    };
+  # Each ping rule precedes the pair's other rules, creating the pair if needed.
+  withPings =
+    policy:
+    lib.recursiveUpdate policy (
+      lib.mapAttrs (source: destinations: {
+        to = lib.genAttrs destinations (
+          destination: [ (ping destination) ] ++ (policy.${source}.to.${destination} or [ ])
+        );
+      }) pingTargets
+    );
   icmp6 = icmpv6 {
     comment = "ICMPv6";
   };
@@ -197,7 +264,7 @@ in
   };
 
   # Omitted zone pairs are denied. Rules within a pair are evaluated in order.
-  ipv4 = {
+  ipv4 = withPings {
     guest.to.local = [ dhcp ];
     guest.to.transit = [ dns4 ];
     guest.to.wan = [ accept ];
@@ -260,15 +327,6 @@ in
         dport = 80;
         comment = "PXE boot assets";
       })
-      {
-        l4proto = "icmp";
-        saddr = "10.1.0.0/24";
-        icmpType = [
-          "destination-unreachable"
-          "time-exceeded"
-          "parameter-problem"
-        ];
-      }
       dhcp
       ntp4
       tftp
@@ -304,7 +362,6 @@ in
     ];
     lan.to.wan = [ accept ];
     local.to.roon = [
-      icmp4
       {
         l4proto = "igmp";
         comment = "Multicast membership";
@@ -349,7 +406,6 @@ in
         saddr = "10.254.0.0";
         comment = "BGP";
       })
-      icmp4
     ];
     local.to.trusted = [
       {
@@ -358,7 +414,6 @@ in
         daddr = "10.1.2.6";
         comment = "VRRP to trusted backup";
       }
-      icmp4
       {
         l4proto = "igmp";
         comment = "Multicast membership";
@@ -383,16 +438,6 @@ in
       (udp { dport = 123; })
       (tcp { dport = 443; })
       (udp { sport = 51820; })
-      {
-        l4proto = "icmp";
-        icmpType = [
-          "echo-request"
-          "echo-reply"
-          "destination-unreachable"
-          "time-exceeded"
-          "parameter-problem"
-        ];
-      }
     ];
     roon.to.local = [
       dhcp
@@ -400,11 +445,6 @@ in
       {
         l4proto = "igmp";
         comment = "Multicast membership";
-      }
-      {
-        l4proto = "icmp";
-        icmpType = "echo-request";
-        comment = "Ping";
       }
     ];
     roon.to.transit = [
@@ -497,7 +537,6 @@ in
       })
     ];
     servers.to.wan = [ accept ];
-    transit.to.iot = [ icmp4 ];
     # Pod addresses are not masqueraded, so Home Assistant reaches ROON devices
     # from the pod network.
     transit.to.roon = [
@@ -527,7 +566,6 @@ in
         dport = 443;
         comment = "UniFi controller";
       })
-      icmp4
       (udp {
         daddr = setRef "snmp_targets";
         dport = [
@@ -557,7 +595,6 @@ in
         saddr = "10.254.0.1";
         comment = "BGP";
       })
-      icmp4
       ntp4
       (tcp {
         daddr = setRef "metrics_targets";
@@ -584,7 +621,6 @@ in
         dport = setRef "proxmox_ports";
         comment = "Proxmox management";
       })
-      icmp4
       (tcp {
         daddr = setRef "metrics_targets";
         dport = [
@@ -608,7 +644,6 @@ in
       })
     ];
     transit.to.trusted = [
-      icmp4
       (tcp {
         saddr = setRef "transit_pods";
         daddr = "10.1.2.70";
@@ -672,7 +707,6 @@ in
       dhcp
       ntp4
       tftp
-      icmp4
       {
         l4proto = "igmp";
         comment = "Multicast membership";
@@ -701,7 +735,6 @@ in
     trusted.to.roon = [ accept ];
     trusted.to.servers = [ accept ];
     trusted.to.transit = [
-      icmp4
       dns4
       {
         daddr = setRef "routed_servers";

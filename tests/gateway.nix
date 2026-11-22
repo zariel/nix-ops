@@ -171,12 +171,33 @@ pkgs.testers.runNixOSTest {
     for address in ("10.1.2.11", "10.1.3.14", "10.1.1.31", "10.1.0.22"):
         router.fail(f"ip netns exec roon curl -fsS --max-time 2 http://{address}:8080")
 
-    # Only the gateway and Trusted may ping ROON; ROON may ping only the gateway.
-    router.succeed("ping -c 1 -W 2 10.1.4.10")
-    router.succeed("ip netns exec trusted ping -c 1 -W 2 10.1.4.10")
-    router.fail("ip netns exec servers ping -c 1 -W 2 10.1.4.10")
-    router.succeed("ip netns exec roon ping -c 1 -W 2 10.1.4.1")
-    router.fail("ip netns exec roon ping -c 1 -W 2 10.1.2.11")
+    # Pings follow zone trust; restricted zones may ping only the gateway.
+    zone_gateways = {"trusted": "10.1.2.1", "iot": "10.1.3.1", "roon": "10.1.4.1", "guest": "192.168.2.1", "servers": "10.1.1.1", "lan": "10.1.0.1", "transit": "10.254.0.0"}
+    for zone, gateway in zone_gateways.items():
+        router.succeed(f"ip netns exec {zone} ping -c 1 -W 2 {gateway}")
+    router.fail("ip netns exec wan ping -c 1 -W 2 198.18.0.1")
+    for address in ("10.1.2.11", "10.1.3.14", "10.1.4.10", "192.168.2.11", "10.1.1.31", "10.1.0.22", "10.254.0.1", "198.18.0.2"):
+        router.succeed(f"ping -c 1 -W 2 {address}")
+    for zone, address in (
+        ("trusted", "10.1.3.14"), ("trusted", "10.1.4.10"), ("trusted", "192.168.2.11"), ("trusted", "10.1.0.22"),
+        ("lan", "10.1.1.31"), ("servers", "10.1.2.11"), ("servers", "10.1.3.14"), ("transit", "10.1.2.11"), ("transit", "10.1.0.22"),
+    ):
+        router.succeed(f"ip netns exec {zone} ping -c 1 -W 2 {address}")
+    for zone, address in (
+        ("roon", "10.1.2.11"), ("iot", "10.1.2.11"), ("guest", "10.1.3.14"), ("lan", "10.1.2.11"),
+        ("servers", "10.1.4.10"), ("servers", "10.1.0.22"), ("transit", "10.1.4.10"), ("wan", "10.1.2.11"),
+    ):
+        router.fail(f"ip netns exec {zone} ping -c 1 -W 2 {address}")
+
+    # New pings to the gateway are limited to 10/second with a burst of 20;
+    # pings through it are not. Conntrack accepts the later echo requests of an
+    # answered ping, so each probe is a separate ping with its own identifier.
+    def answered(zone, address):
+        output = router.succeed(f"seq 100 | xargs -P 100 -I{{}} ip netns exec {zone} sh -c 'ping -c 1 -W 2 {address} >/dev/null && echo answered' || true")
+        return output.split().count("answered")
+    limited = answered("roon", "10.1.4.1")
+    assert 15 <= limited <= 70, limited
+    assert answered("trusted", "10.1.3.14") == 100
 
     router.succeed("ip netns exec transit ip addr add 10.45.0.24/32 dev lo; ip route add 10.45.0.24/32 via 10.254.0.1")
     router.succeed("ip netns exec transit python -m http.server 50413 --bind 10.45.0.24 >/tmp/torrent.log 2>&1 &")

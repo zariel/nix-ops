@@ -153,6 +153,17 @@ let
       };
       expected = "meta l4proto icmp icmp type echo-request counter accept";
     };
+    testLimit = {
+      expr = render "ipv4" {
+        l4proto = "icmp";
+        icmpType = "echo-request";
+        limit = {
+          rate = "10/second";
+          burst = 20;
+        };
+      };
+      expected = "meta l4proto icmp icmp type echo-request limit rate 10/second burst 20 packets counter accept";
+    };
     testRouterIdentity = {
       expr = render "ipv6" (icmpv6 {
         saddr = "fe80::892:17ff:febd:446e";
@@ -204,8 +215,24 @@ let
           l4proto = "ipv6-icmp";
           icmpv6Type = "packet-too-big";
         }
+        { limit.rate = "10/second"; }
+        {
+          limit = {
+            rate = "fast";
+            burst = 20;
+          };
+        }
+        {
+          limit = {
+            rate = "10/second";
+            burst = 0;
+          };
+        }
       ];
       expected = [
+        true
+        true
+        true
         true
         true
         true

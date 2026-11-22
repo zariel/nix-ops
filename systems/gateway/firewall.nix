@@ -129,7 +129,6 @@ in
             iifname "wan0" meta nfproto ipv4 fib saddr oif missing counter drop
             ct state invalid drop
             ct state established,related accept
-            iifname "bond0.100" ip saddr 10.1.0.0/24 icmp type echo-request limit rate 10/second burst 20 packets counter accept
             ${dispatch "input"}
           }
           chain forward {
