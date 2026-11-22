@@ -122,6 +122,26 @@ where `OOB-OUT` drops it. Replies are related traffic. trusted-backup already
 forwards traffic from `10.1.2.0/24` to `10.0.0.0/8` and imports every route
 from the core, so it needs no change.
 
+## Software updates
+
+OOB devices have no internet access or DNS, and opening either would widen the
+ACLs for something done a few times a year. Updates instead reach the internet
+through the operator's SSH session from a trusted host: a remote dynamic
+forward gives PiKVM a SOCKS proxy on its own loopback, and pacman's libcurl
+uses it through the proxy variables, resolving names at the far end:
+
+```sh
+ssh -R 1080 root@pikvm 'export all_proxy=socks5h://127.0.0.1:1080 https_proxy=socks5h://127.0.0.1:1080 http_proxy=socks5h://127.0.0.1:1080; pikvm-update --no-reboot'
+```
+
+`pikvm-update` exits 100 when a reboot is needed and leaves the root
+read-write until it happens. Before `reboot`, check that `kvmd -m` succeeds
+and look for new `.pacnew` files under `/etc`; most of those present date from
+the image. Afterwards check that the root is read-only again and that `kvmd`,
+`kvmd-nginx`, `kvmd-janus` and time sync are active. Devices without a shell,
+such as the PDU and the Avocent, take firmware files uploaded from a trusted
+host instead.
+
 ## Syslog
 
 Beefchunk and the OOB devices send syslog over UDP 514 to the cluster's log
