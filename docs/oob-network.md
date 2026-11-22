@@ -46,7 +46,7 @@ would be `.31`). The gateway's OOB port is a host on this network and takes
 | `10.1.254.20` | TESmart KVM | OOB .20, TCP 5000 | HDMI/USB switching for PiKVM |
 | `10.1.254.30` | PDU (Raritan PX2-5260R) | OOB .30 | Power cycling |
 | `10.1.254.40` | Avocent ACS 8016 (`console`) | OOB .40 | ICX serial consoles |
-| `10.1.254.50` | Gateway `rescue0` (onboard NIC) | OOB .50 | SSH and deploy during cutover and maintenance; a host on this network, not a router |
+| `10.1.254.50` | Gateway `rescue0` (onboard NIC) | OOB .50 | SSH and deploy, including while Beefchunk is down; a host on this network, not a router |
 | `10.1.254.100` | Recovery laptop | OOB .100 | Temporary; only while connected for recovery |
 
 The Netgear is unmanaged and has no address. Every device uses the mask
@@ -167,14 +167,18 @@ via `10.1.254.1` live in the VRF's table and never enter the main routing table.
 `net.ipv4.tcp_l3mdev_accept = 1` lets the existing sshd accept connections that
 arrive through the VRF, and replies leave through it. The firewall accepts only
 SSH on that interface and no zone pair forwards to or from it. That protects
-against misconfiguration, not compromise, so the NIC is cabled only for cutover
-and maintenance. PiKVM already provides the gateway's console.
+against misconfiguration, not compromise. A compromised gateway gains nothing
+from the cable, because it already owns trusted addresses and `OOB-OUT` admits
+trusted to every OOB device, so the NIC stays cabled to Netgear port 6: it is the
+way into the OOB segment when Beefchunk is down. PiKVM provides the gateway's
+console.
 
 VyOS configured `eth4` with `10.1.0.1/24`, the same address as `bond0.100`.
 The NIC had no carrier, so the route was dead, but cabling it to any segment
 would have given VyOS a second connected route for VLAN 100's prefix on the
-wrong wire, so the address was removed on 2026-11-22. VyOS gets no OOB address:
-it is the system being replaced, and a rollback to it uses PiKVM. The NixOS
+wrong wire, so the address was removed on 2026-11-22. VyOS gets no OOB address
+and keeps `eth4` disabled although it is cabled: it is the system being
+replaced, and a rollback to it uses PiKVM. The NixOS
 gateway (`systems/gateway` on the `nixos-gateway` branch) configures `rescue0`
 as described here.
 
@@ -215,7 +219,7 @@ workspace at `docs/oob-rollout.md`. In outline:
 4. **Avocent.** Address it from its console port, cable it to the Netgear and
    its serial ports to the ICX consoles.
 5. **Gateway NIC.** Remove `10.1.0.1/24` from VyOS `eth4`, add `vrf-oob` on
-   `nixos-gateway`, and cable `rescue0` at cutover.
+   `nixos-gateway`, with `rescue0` already cabled to the Netgear and disabled on VyOS until cutover.
 
 Move one device at a time (PiKVM and the TESmart count as one), confirm with
 the operator what is cabled to each Beefchunk port before changing it, make the
