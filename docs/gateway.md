@@ -447,9 +447,6 @@ an outage for its initial OS replacement and eventual kernel maintenance.
 
 ## Deliberate differences and retained limitations
 
-- VLAN 140, its DHCP subnet, AirVPN VRF and VPN firewall zone are removed as requested.
-- VLAN 99 is obsolete: it had DHCP configuration but no live lease; the active
-  WAN was VyOS `eth3` (now `wan0`). It is omitted rather than starting a second WAN DHCP client.
 - `rescue0` is left unnumbered. The live router had `10.1.0.1/24` on both this unplugged
   NIC and VLAN 100. Management remains on VLAN 100; using a rescue NIC needs its
   own non-overlapping subnet and explicit firewall access.
