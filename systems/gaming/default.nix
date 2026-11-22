@@ -538,6 +538,13 @@ in
       swtpm.enable = true;
       runAsRoot = true;
     };
+    # Development and test VMs (Katl nodes among them) must stop cleanly at host
+    # shutdown. Resuming a suspended Kubernetes node jumps its clock past leases
+    # and certificate checks, and serial suspends make shutdown time unbounded.
+    onShutdown = "shutdown";
+    onBoot = "ignore";
+    parallelShutdown = 4;
+    shutdownTimeout = 120;
   };
   programs.virt-manager.enable = true;
 
