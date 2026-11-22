@@ -220,7 +220,6 @@ in
       "10.1.1.155"
       "10.1.2.16"
       "10.1.1.32"
-      "10.1.0.100"
       "10.1.2.57"
     ];
     plex_clients = addressSet [ "10.1.3.16" ];
@@ -341,12 +340,6 @@ in
           162
         ];
         comment = "SNMP";
-      })
-      (tcpUdp {
-        daddr = "10.1.1.51";
-        dport = 5000;
-        saddr = "10.1.0.100";
-        comment = "Port 5000 service";
       })
     ];
     lan.to.transit = [ dns4 ];
