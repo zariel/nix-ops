@@ -59,17 +59,31 @@ advertised = json.loads(primary.succeed("cat /tmp/advertised.json"))
 assert "10.1.2.0/24" not in advertised.get("advertisedRoutes", {})
 
 
-def relay_process():
-    pid = primary.succeed("systemctl show roon-discovery -p MainPID --value").strip()
-    return primary.succeed(f"cat /proc/{pid}/comm").strip()
+# Roon discovery crosses between Trusted and ROON on UDP 9003 by broadcast and
+# by the SOOD group, keeping the original source address and port, so ROCK's
+# unicast replies are routed straight back to the client. The relay does not
+# depend on which gateway holds Trusted's VRRP /24.
+client.succeed("ip netns add roon; ip link add roon link eth1 type vlan id 60; ip link set roon netns roon; ip -n roon link set roon name peer")
+client.succeed("ip -n roon link set lo up; ip -n roon link set peer up; ip -n roon addr add 10.1.4.10/24 dev peer; ip -n roon route add default via 10.1.4.1")
+udp = "python /etc/gateway-udp.py"
+for port in (9003, 9004):
+    client.succeed(f"ip netns exec roon {udp} echo 0.0.0.0 {port} /tmp/rock-{port} 239.255.90.90 >/tmp/rock-{port}.log 2>&1 &")
+    client.wait_until_succeeds(f"test -f /tmp/rock-{port}.ready")
+client.succeed(f"{udp} echo 0.0.0.0 9003 /tmp/trusted-9003 >/tmp/trusted-9003.log 2>&1 &")
+client.wait_until_succeeds("test -f /tmp/trusted-9003.ready")
 
 
-# The Roon discovery relay reads interface subnets once, so it must not start
-# while Trusted's /24 belongs to the backup.
-primary.succeed("systemctl restart roon-discovery")
-primary.sleep(3)
-primary.succeed("systemctl is-active roon-discovery.service")
-assert relay_process() != "udp-proxy-2020", relay_process()
+def discovery(label):
+    for sport, destination in ((45010, "10.1.2.255"), (45011, "255.255.255.255"), (45012, "239.255.90.90")):
+        reply = client.wait_until_succeeds(f"{udp} request 10.1.2.10 {sport} {destination} 9003 {label}-{sport}", timeout=30)
+        assert reply.strip() == f"reply-{label}-{sport} 10.1.4.10:9003", reply
+        client.succeed(f"grep -x '{label}-{sport} 10.1.2.10' /tmp/rock-9003")
+    client.succeed(f"ip netns exec roon {udp} send 10.1.4.10 45013 10.1.4.255 9003 {label}-announce")
+    client.wait_until_succeeds(f"grep -x '{label}-announce 10.1.4.10' /tmp/trusted-9003")
+
+
+assert not owns(primary, "bond0.20")
+discovery("backup-vip")
 
 # Intentional handback; the higher priority primary must not preempt on recovery.
 backup.succeed("systemctl stop keepalived")
@@ -78,25 +92,8 @@ path("10.254.0.0")
 backup.succeed("systemctl start keepalived")
 backup.sleep(3)
 assert not owns(backup, "trusted")
-primary.wait_until_succeeds("test \"$(cat /proc/$(systemctl show roon-discovery -p MainPID --value)/comm)\" = udp-proxy-2020")
-
-# Discovery broadcasts on UDP 9003 cross between Trusted and ROON with their
-# original sources, and ROCK's unicast replies are routed back to the client.
-client.succeed("ip netns add roon; ip link add roon link eth1 type vlan id 60; ip link set roon netns roon; ip -n roon link set roon name peer")
-client.succeed("ip -n roon link set lo up; ip -n roon link set peer up; ip -n roon addr add 10.1.4.10/24 dev peer; ip -n roon route add default via 10.1.4.1")
-udp = "python /etc/gateway-udp.py"
-for port in (9003, 9004):
-    client.succeed(f"ip netns exec roon {udp} echo 0.0.0.0 {port} /tmp/rock-{port} >/tmp/rock-{port}.log 2>&1 &")
-    client.wait_until_succeeds(f"test -f /tmp/rock-{port}.ready")
-reply = client.wait_until_succeeds(f"{udp} request 10.1.2.10 45010 10.1.2.255 9003 discover", timeout=30)
-assert reply.strip() == "reply-discover 10.1.4.10:9003", reply
-client.succeed("grep -x 'discover 10.1.2.10' /tmp/rock-9003")
-client.succeed(f"{udp} send 10.1.2.10 45011 10.1.2.255 9004 other-port")
-
-client.succeed(f"{udp} echo 0.0.0.0 9003 /tmp/trusted-9003 >/tmp/trusted-9003.log 2>&1 &")
-client.wait_until_succeeds("test -f /tmp/trusted-9003.ready")
-client.succeed(f"ip netns exec roon {udp} send 10.1.4.10 45012 10.1.4.255 9003 announce")
-client.wait_until_succeeds("grep -x 'announce 10.1.4.10' /tmp/trusted-9003")
+discovery("primary-vip")
+client.succeed(f"{udp} send 10.1.2.10 45014 10.1.2.255 9004 other-port")
 client.sleep(1)
 client.fail("grep other-port /tmp/rock-9004")
 
@@ -175,7 +172,7 @@ primary.succeed("networkctl reconfigure bond0.1100")
 advertise()
 primary.wait_until_succeeds("ip -6 route show fd42:dfb5:24e4:1::/64 | grep bond0.1100")
 
-primary.wait_for_unit("mdns-reflector.service")
+primary.wait_for_unit("discovery-reflector.service")
 matter = "python /etc/gateway-matter.py"
 for namespace in ("thread", "matter", "iot"):
     client.succeed(f"ip netns exec {namespace} python /etc/gateway-matter.py mdns-listen peer /tmp/{namespace}-mdns >/tmp/{namespace}-mdns.log 2>&1 &")
@@ -206,6 +203,6 @@ client.succeed(f"ip netns exec roon {matter} mdns-announce peer _musc._tcp.local
 client.wait_until_succeeds("grep -q _musc /tmp/trusted-mdns4")
 client.sleep(1)
 client.fail("grep -q _airplay /tmp/trusted-mdns4")
-primary.succeed("systemctl restart mdns-reflector; networkctl reload")
-primary.wait_for_unit("mdns-reflector.service")
+primary.succeed("systemctl restart discovery-reflector; networkctl reload")
+primary.wait_for_unit("discovery-reflector.service")
 primary.fail("journalctl -b -u systemd-networkd -u frr --no-pager | grep -E 'Unknown (key|section|command)|Failed to parse|Invalid configuration'")

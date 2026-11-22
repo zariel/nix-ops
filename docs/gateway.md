@@ -33,20 +33,10 @@ primary on the shared network; they must not run with the same node address.
   serve persistent secondary copies through the DNS VIP.
   Reservations are ordinary Nix entries
   in `systems/gateway/reservations.nix`, grouped by subnet: `name = [ "MAC" "IP" ];`.
-  All 59 live reservations are included, including MACs used in different VLANs
-  and `bc250-lounge`, which is absent from the VyOS repository scripts.
-- Chrony, node-exporter, FRR, Matchbox 0.11.0, the mDNS reflector and the Roon
-  discovery relay run as native systemd services. There are no application containers on
-  this gateway. UniFi OS Server runs separately on pve2 VM 203 at `10.1.0.23`.
-- The `roon-discovery` unit runs udp-proxy-2020 0.1.4, the release in VyOS's
-  container image, packaged in `packages/udp-proxy-2020`. It relays UDP 9003
-  broadcasts between `bond0.20` and `bond0.60` only, keeping each sender's
-  source address so ROCK and Trusted clients reply to each other directly.
-  It captures and re-injects frames through packet sockets, which nftables does
-  not filter; the routed unicast replies follow the ROON firewall rules. The
-  relay reads interface subnets once at startup, so its start script waits for
-  Trusted's VRRP `10.1.2.1/24`, as on VyOS. Because preemption is disabled, a
-  primary that starts while the backup owns that address waits until handback.
+  All 59 live reservations are included, including MACs used in different VLANs.
+- Chrony, node-exporter, FRR, Matchbox 0.11.0 and the discovery reflector run
+  as native systemd services. There are no application containers on this
+  gateway. UniFi OS Server runs separately on pve2 VM 203 at `10.1.0.23`.
 - Networkd owns the application's `/32` addresses on loopback and an unreachable
   summary route for `10.5.0.0/26`. FRR announces that host block through the ICX.
   Application restarts and removal of one address do not withdraw other services;
@@ -119,9 +109,8 @@ Systemd delivers BIND and D2 credentials separately.
 | TFTP | Dynamic unprivileged user, privileged-port binding, read-only boot files. Upload requests are rejected. | 128 MiB |
 | Syslog forwarding | Dynamic unprivileged user; reads the journal with a persistent cursor, writes managed state/runtime directories and connects only to `10.45.0.2`. | 256 MiB |
 | Matchbox | Dedicated unprivileged user; binds only IPv4 TCP 80 and reads boot assets. | 256 MiB |
-| Roon discovery | Dynamic unprivileged user with raw packet access; binds only IPv4 UDP 9003 and has no IP traffic on its sockets. | 128 MiB |
 | Chrony | Retains clock adjustment; no direct hardware clock devices. | 128 MiB |
-| mDNS reflector | Dynamic unprivileged user with raw packet access; binds no IP port and has no IP traffic on its sockets. | 128 MiB |
+| Discovery reflector | Dynamic unprivileged user with raw packet access; binds no IP port and has no IP traffic on its sockets. | 128 MiB |
 | Node exporter | Existing upstream sandbox and no capabilities. Read-only timex syscalls remain available for metrics. | 512 MiB |
 | D-Bus broker / NSS cache | Local IPC and identity lookup, with capability/syscall restrictions. | 256 / 128 MiB |
 | SSH | Retains host filesystem access and privilege transitions for sudo and deployment. | 1 GiB |
@@ -251,18 +240,27 @@ connection profiles are an alternative when frequent interactive link changes
 matter; a custom reconciler would add lifecycle and rollback behaviour to maintain.
 Neither alternative eliminates a link interruption when recreating a bond or VLAN.
 
-## mDNS reflection
+## Discovery reflection
+
+The `discovery-reflector` unit runs netflector 0.17.1, packaged in
+`packages/netflector`, for both mDNS and Roon discovery. Its configuration is
+generated in `systems/gateway/services.nix`; the build rejects one that
+`netflector --check-config` refuses, such as two entries that could reflect the
+same packet. netflector captures and re-emits through packet sockets, which
+bypass nftables, so the firewall holds no mDNS or Roon discovery allowances; the
+policy lives in the reflector configuration. Routed unicast replies are
+filtered normally. The unit starts once the VLAN interfaces exist; netflector
+then follows address changes itself, without ordering against networkd or VRRP.
+It runs on the primary only; the trusted backup runs no reflector.
+
+### mDNS
 
 VyOS reflects mDNS through one Avahi process whose allow-list applies to every
 reflector interface, so a VLAN that joins the reflector sends and receives every
 listed service. The NixOS gateway instead grants each service between specific
-VLAN pairs. The `mdns-reflector` unit runs netflector 0.17.1, packaged in
-`packages/netflector`, from grants in `systems/gateway/services.nix`. Each grant
-names client VLANs, device VLANs and services: queries cross from clients to
-devices, and the devices' answers and announcements cross back. Nothing is
-reflected in the other direction. The build rejects a generated configuration
-that `netflector --check-config` refuses, such as two entries that could
-reflect the same packet.
+VLAN pairs. Each grant names client VLANs, device VLANs and services: queries
+cross from clients to devices, and the devices' answers and announcements cross
+back. Nothing is reflected in the other direction.
 
 | Services | Clients | Devices | Purpose |
 | --- | --- | --- | --- |
@@ -270,15 +268,26 @@ reflect the same packet.
 | `_meshcop._udp`, `_matter._tcp`, `_matterc._udp`, `_matterd._udp` | Trusted, IoT, OTBR, Matter controllers | the same VLANs | Thread border routers, Matter controllers and devices discover each other in every direction, as before. |
 | `_musc._tcp` | Trusted | ROON | The BluOS app on Trusted finds the Bluesound players. Their Spotify, TIDAL, Qobuz Connect and AirPlay advertisements stay on ROON. |
 
-netflector captures mDNS and re-emits it through packet sockets, sourced from
-the gateway's own address on the egress VLAN with hop limit 255, so clients
-accept the answers as on-link. Packet sockets bypass nftables, so the firewall
-holds no mDNS allowances; the policy lives in the grants. The gateway's IGMP and
-MLD memberships for the mDNS groups use the existing multicast membership rules.
-Answers lose link-local address records, which the other VLAN could not reach.
-The unit starts once the VLAN interfaces exist; netflector then follows address
-changes itself, without ordering against networkd or VRRP. It runs on the primary only;
-the trusted backup runs no reflector.
+Re-emitted mDNS is sourced from the gateway's own address on the egress VLAN
+with hop limit 255, so clients accept the answers as on-link. Answers lose
+link-local address records, which the other VLAN could not reach. The gateway's
+IGMP and MLD memberships for the mDNS groups use the existing multicast
+membership rules. Legacy unicast queriers, which ask from ephemeral ports, are
+not served.
+
+### Roon discovery
+
+Roon discovery (SOOD) uses UDP 9003 broadcasts and the `239.255.90.90` group,
+which do not cross VLANs. The `roon-discovery` entry relays both in each
+direction between Trusted and ROON, unchanged: the source address, port and TTL
+are kept, so ROCK and Trusted clients answer each other by routed unicast, which
+the ROON firewall rules permit. A broadcast is recognised by its broadcast
+frame, not by the interface's subnets, so the relay does not depend on
+Trusted's VRRP `10.1.2.1/24`. It keeps working while the backup holds that
+address, and it needs none of VyOS's start-up wait for it. A directed broadcast
+is re-sent to the egress VLAN's directed broadcast, or to the limited broadcast
+when the egress's first IPv4 address is a host route, as Trusted's `10.1.2.5/32`
+is; a client listening on the port receives either.
 
 ## Firewall maintenance
 
@@ -465,7 +474,7 @@ an outage for its initial OS replacement and eventual kernel maintenance.
   the fixed snapshot in `geoip-cn-ru.nft`; refresh it deliberately from a trusted source.
 - mDNS reflection is granted per service and direction between VLAN pairs,
   instead of through VyOS's one Avahi allow-list across every reflector
-  interface; see [mDNS reflection](#mdns-reflection). Trusted's own HomeKit,
+  interface; see [mDNS reflection](#mdns). Trusted's own HomeKit,
   AirPlay, printing and companion-link advertisements no longer reach IoT.
   Legacy unicast mDNS queriers, which ask from ephemeral ports, are not served.
 - Node exporter listens only on `10.5.0.11`. Routed pod access includes PDU

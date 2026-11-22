@@ -1,28 +1,6 @@
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}:
+{ lib, pkgs, ... }:
 let
   addresses = (import ../../roles/gateway-services/settings.nix).addresses;
-  trusted = config.services.keepalived.vrrpInstances.TRUSTED;
-  trustedVip = (builtins.head trusted.virtualIps).addr;
-  roonInterfaces = [
-    trusted.interface
-    "bond0.60"
-  ];
-  roonReady = map (interface: "systemd-networkd-wait-online@${interface}.service") roonInterfaces;
-  roonDiscovery = pkgs.writeShellScript "roon-discovery" ''
-    # The relay reads interface subnets once at startup to build its capture
-    # filters and broadcast addresses, so it needs Trusted's VRRP /24.
-    until ip -4 -o addr show dev ${trusted.interface} | grep -Fq ' ${trustedVip} '; do
-      sleep 1
-    done
-    exec ${
-      lib.getExe (pkgs.callPackage ../../packages/udp-proxy-2020/package.nix { })
-    } --interface ${lib.concatStringsSep "," roonInterfaces} --port 9003
-  '';
   # mDNS reflection is granted per service between VLAN pairs. Each grant
   # exposes services advertised on its device VLANs to clients on its client
   # VLANs; queries cross towards the devices and answers come back, and
@@ -76,7 +54,7 @@ let
   ];
   # netflector takes one mDNS entry per direction, so grants sharing a client
   # and device VLAN merge their services.
-  reflectors = lib.foldl' (
+  mdnsReflectors = lib.foldl' (
     entries:
     {
       clients,
@@ -107,11 +85,30 @@ let
       ) entries devices
     ) entries clients
   ) { } discovery;
+  reflectors = mdnsReflectors // {
+    # Roon discovery (SOOD) broadcasts and multicasts on UDP 9003 and does not
+    # cross VLANs. Relayed datagrams keep their source address and port, so
+    # ROCK and Trusted clients answer each other by routed unicast.
+    roon-discovery = {
+      source_if = "bond0.20";
+      target_if = "bond0.60";
+      bidirectional = true;
+      address_family = "ipv4";
+      udp_ports = [ 9003 ];
+      udp_broadcast = true;
+      udp_groups = [ "239.255.90.90" ];
+    };
+  };
   netflector = pkgs.callPackage ../../packages/netflector/package.nix { };
   # netflector exits if an interface is absent at startup; it follows later
   # address changes itself.
   reflectorLinks = map (interface: "sys-subsystem-net-devices-${interface}.device") (
-    lib.unique (lib.concatMap ({ clients, devices, ... }: clients ++ devices) discovery)
+    lib.unique (
+      lib.concatMap (reflector: [
+        reflector.source_if
+        reflector.target_if
+      ]) (builtins.attrValues reflectors)
+    )
   );
   # Parsing needs no interfaces, so conflicting entries fail the build.
   reflectorConfig =
@@ -178,10 +175,11 @@ in
         action.resumeRetryCount="-1" queue.type="LinkedList" queue.size="10000")
     '';
   };
-  # netflector captures and re-emits mDNS through packet sockets, which bypass
-  # nftables; it binds no IP port.
-  systemd.services.mdns-reflector = {
-    description = "mDNS reflection between VLAN pairs";
+  # netflector captures and re-emits mDNS and Roon discovery through packet
+  # sockets, which bypass nftables; it binds no IP port. Routed unicast replies
+  # are filtered normally.
+  systemd.services.discovery-reflector = {
+    description = "mDNS and Roon discovery reflection between VLANs";
     wants = reflectorLinks;
     after = reflectorLinks;
     wantedBy = [ "multi-user.target" ];
@@ -208,41 +206,6 @@ in
   };
   # Resolved must not answer or join mDNS on the reflected VLANs.
   services.resolved.settings.Resolve.MulticastDNS = false;
-
-  # Roon discovery broadcasts on UDP 9003 and does not cross VLANs. The relay
-  # captures and re-injects it through packet sockets, which bypass nftables;
-  # unicast replies are routed and filtered normally.
-  systemd.services.roon-discovery = {
-    description = "Roon discovery relay between Trusted and ROON";
-    wantedBy = [ "multi-user.target" ];
-    requires = roonReady;
-    after = roonReady;
-    path = [ pkgs.iproute2 ];
-    serviceConfig = (import ./sandbox.nix) // {
-      # The start script waits in ExecStart so a missing VIP cannot block boot
-      # or activation.
-      ExecStart = roonDiscovery;
-      DynamicUser = true;
-      AmbientCapabilities = [ "CAP_NET_RAW" ];
-      CapabilityBoundingSet = [ "CAP_NET_RAW" ];
-      RestrictAddressFamilies = [
-        "AF_UNIX"
-        "AF_INET"
-        "AF_NETLINK"
-        "AF_PACKET"
-      ];
-      # The relay binds sink sockets on its interface addresses and discards
-      # what they receive.
-      SocketBindDeny = "any";
-      SocketBindAllow = "ipv4:udp:9003";
-      IPAddressDeny = "any";
-      MemoryHigh = "64M";
-      MemoryMax = "128M";
-      TasksMax = 64;
-      Restart = "always";
-      RestartSec = "2s";
-    };
-  };
 
   environment.systemPackages = with pkgs; [
     tcpdump

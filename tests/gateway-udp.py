@@ -14,6 +14,9 @@ if operation in ("listen", "echo"):
     # Each line records the payload; echo also records the source address and
     # replies from the bound socket to the sender.
     log = Path(args[0])
+    for group in args[1:]:
+        # Join IPv4 groups on the interface of the route towards them.
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(group) + bytes(4))
     log.touch()
     Path(str(log) + ".ready").touch()
     while True:
@@ -31,7 +34,10 @@ elif operation in ("send", "request"):
         pass
     if operation == "request":
         sock.settimeout(5)
+        # A broadcast also reaches this host's own listeners; wait for a remote reply.
         reply, source = sock.recvfrom(4096)
+        while source[0] == address:
+            reply, source = sock.recvfrom(4096)
         print(f"{reply.decode()} {source[0]}:{source[1]}")
 else:
     raise ValueError(operation)
