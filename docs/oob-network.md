@@ -86,14 +86,15 @@ replies rather than new connections wherever the protocol allows it:
 | --- | --- | --- | --- |
 | Any OOB device | `10.1.254.1` | All IPv4 | Ping and SSH to the switch from the OOB segment |
 | Any OOB device | Trusted | TCP with ACK or RST (`established`), ICMP echo-reply and unreachable | Replies only; OOB devices cannot open TCP connections to trusted clients |
+| PiKVM | Trusted | UDP from 20000-40000 | WebRTC video from Janus's RTP ports to the browser, which opens the flow from trusted; without it the web UI's H.264 stream is black |
 | Any OOB device | Pods | ICMP echo-reply | Probe replies |
 | PDU | Pods | TCP from 443 (`established`), UDP from 161 | Certificate deployment and SNMP replies |
 | Any OOB device | `10.5.0.10` | UDP to 123 | NTP |
 | Any OOB device | `10.45.0.2` | UDP to 514 | Syslog to the cluster |
 
 Both ACLs end with a logged deny. The FastIron guide excludes outbound ACL
-logging only on other ICX models and the CLI accepts it here, but whether the
-outbound deny actually logs on the 7250 is untested. Logging is CPU-bound and
+logging only on other ICX models and the CLI accepts it here, and on 2026-11-22 the
+outbound deny logged on the 7250 as `List Egress denied`. Logging is CPU-bound and
 rate limited.
 
 Traffic between OOB devices, such as PiKVM driving the TESmart on TCP 5000,
