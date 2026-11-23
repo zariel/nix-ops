@@ -53,6 +53,13 @@ pkgs.testers.runNixOSTest {
             };
             vlanConfig.Id = 20;
           };
+          "20-servers" = {
+            netdevConfig = {
+              Name = "servers";
+              Kind = "vlan";
+            };
+            vlanConfig.Id = 10;
+          };
           "20-transit" = {
             netdevConfig = {
               Name = "transit";
@@ -66,7 +73,24 @@ pkgs.testers.runNixOSTest {
             matchConfig.Name = "eth1";
             vlan = [
               "trusted"
+              "servers"
               "transit"
+            ];
+          };
+          "30-servers" = {
+            matchConfig.Name = "servers";
+            address = [ "10.1.1.6/32" ];
+            networkConfig = {
+              IPv6AcceptRA = false;
+              KeepConfiguration = "static";
+            };
+            routes = [
+              {
+                Destination = "10.1.1.0/24";
+                Scope = "link";
+                Metric = 100;
+                PreferredSource = "10.1.1.6";
+              }
             ];
           };
           "30-trusted" = {
@@ -111,6 +135,31 @@ pkgs.testers.runNixOSTest {
           trackInterfaces = [ "transit" ];
           extraConfig = "version 2\nadvert_int 1\ncheck_unicast_src\nunicast_fault_no_peer";
         };
+        vrrpInstances.SERVERS = {
+          interface = "servers";
+          state = "BACKUP";
+          priority = 100;
+          virtualRouterId = 10;
+          noPreempt = true;
+          unicastSrcIp = "10.1.1.6";
+          unicastPeers = [ "10.1.1.5" ];
+          virtualIps = [
+            {
+              addr = "10.1.1.1/24";
+              dev = "servers";
+            }
+          ];
+          trackInterfaces = [ "transit" ];
+          extraConfig = "version 2\nadvert_int 1\ncheck_unicast_src\nunicast_fault_no_peer";
+        };
+        extraConfig = ''
+          vrrp_sync_group GATEWAY {
+            group {
+              TRUSTED
+              SERVERS
+            }
+          }
+        '';
       };
       systemd.services.keepalived.wantedBy = lib.mkForce [ ];
       systemd.timers.keepalived-boot-delay.wantedBy = lib.mkForce [ ];
@@ -128,9 +177,14 @@ pkgs.testers.runNixOSTest {
            exit-address-family
           exit
           ip prefix-list TRUSTED seq 10 permit 10.1.2.0/24
+          ip prefix-list TRUSTED seq 20 permit 10.1.1.0/24
           route-map TRUSTED permit 10
            match ip address prefix-list TRUSTED
            match interface trusted
+          exit
+          route-map TRUSTED permit 20
+           match ip address prefix-list TRUSTED
+           match interface servers
           exit
           route-map ALLOW permit 10
           exit

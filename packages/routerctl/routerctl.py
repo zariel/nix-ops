@@ -115,9 +115,10 @@ REPORTS = {
         "commands": [["tc", "-s", "qdisc", "show"]],
     },
     "vrrp": {
-        "title": "Trusted gateway ownership",
-        "note": "The floating 10.1.2.1/24 address indicates local VIP ownership. Keepalived process state alone does not imply MASTER.",
+        "title": "Gateway VIP ownership",
+        "note": "The floating 10.1.2.1/24 and 10.1.1.1/24 addresses indicate local VIP ownership. Keepalived process state alone does not imply MASTER.",
         "commands": [["ip", "-4", "address", "show", "dev", "bond0.20"],
+                     ["ip", "-4", "address", "show", "dev", "bond0.10"],
                      ["systemctl", "show", "keepalived.service", "-p", "ActiveState", "-p", "SubState"]],
     },
 }

@@ -363,6 +363,12 @@ in
       }
     ];
     local.to.servers = [
+      {
+        l4proto = 112;
+        saddr = "10.1.1.5";
+        daddr = "10.1.1.6";
+        comment = "VRRP to servers backup";
+      }
       dns
       (tcp {
         dport = 179;
@@ -475,6 +481,12 @@ in
       })
     ];
     servers.to.local = [
+      {
+        l4proto = 112;
+        saddr = "10.1.1.6";
+        daddr = "10.1.1.5";
+        comment = "VRRP from servers backup";
+      }
       (tcp {
         daddr = addresses.matchbox;
         dport = 80;

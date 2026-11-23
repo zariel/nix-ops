@@ -12,11 +12,16 @@ The persistent Jujutsu workspace is `/home/chris/nix-ops-gateway` (`gateway`).
 Run gateway development and validation commands there; the default workspace
 remains on `main`.
 
-The NixOS replacement retains VyOS's trusted VRRP identity: permanent
-`10.1.2.5/32`, floating `10.1.2.1/24`, backup peer `10.1.2.6`, VRID 20 and
-priority 200, reclaiming the VIP from trusted-backup 180 seconds after
-keepalived starts because the backup has no WAN. Stop VyOS before starting the NixOS
-primary on the shared network; they must not run with the same node address.
+The NixOS replacement retains VyOS's VRRP identities for Trusted and Servers.
+Trusted keeps permanent `10.1.2.5/32`, floating `10.1.2.1/24`, backup peer
+`10.1.2.6` and VRID 20. Servers keeps permanent `10.1.1.5/32`, floating
+`10.1.1.1/24`, backup peer `10.1.1.6` and VRID 10. Both run at priority 200 and
+reclaim their VIP from the backup 180 seconds after keepalived starts, because
+trusted-backup has no WAN. The two instances form the keepalived sync group
+`GATEWAY`, so the VIPs always move together and conntrack never sees one
+direction of a flow through each gateway. FRR originates each /24 only while
+its VIP is present. Stop VyOS before starting the NixOS primary on the shared
+network; they must not run with the same node addresses.
 
 ## Ownership and maintenance
 
@@ -74,7 +79,7 @@ unreachable route instead of following the WAN default.
 | DHCP DNS primary | `10.5.0.53` | `gateway-dhcp-dns.cbannister.casa` |
 
 Router identity `10.254.254.1`, the core BGP link `10.254.0.0/31`, SSH/SFTP
-management access and trusted VRRP keep their existing addresses. DHCP broadcast,
+management access and the Trusted and Servers VRRP identities keep their existing addresses. DHCP broadcast,
 mDNS and the WireGuard WAN listener retain their protocol-specific attachments.
 The shared resolver VIP `10.254.253.53` stays on the independent DNS hosts.
 
@@ -408,8 +413,8 @@ native command directly with an appropriate filter. `bgp-route` accepts an IP
 address for a longest-prefix match or a CIDR prefix for an exact lookup; `route`
 accepts a destination IP for the kernel's selected path and source address.
 
-The VRRP report shows the addresses on `bond0.20` alongside keepalived's process
-state. The presence of `10.1.2.1/24` indicates local ownership; a running
+The VRRP report shows the addresses on `bond0.20` and `bond0.10` alongside keepalived's process
+state. The presence of `10.1.2.1/24` or `10.1.1.1/24` indicates local ownership; a running
 keepalived process can also be in BACKUP or FAULT.
 
 ## What applies without rebooting

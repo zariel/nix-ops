@@ -7,7 +7,7 @@ let
   ipv6WanEnabled = false;
   vlans = {
     "10" = {
-      addresses = [ "10.1.1.1/24" ];
+      addresses = [ "10.1.1.5/32" ];
       mtu = 9000;
     };
     "20" = {
@@ -47,6 +47,18 @@ let
     "3001" = {
       addresses = [ "10.254.0.0/31" ];
       mtu = 9000;
+    };
+  };
+  # VLANs whose gateway address is a VRRP VIP: the on-link route that keeps the
+  # standby reachable, and the node address it prefers as source.
+  vrrpRoutes = {
+    "10" = {
+      Destination = "10.1.1.0/24";
+      PreferredSource = "10.1.1.5";
+    };
+    "20" = {
+      Destination = "10.1.2.0/24";
+      PreferredSource = "10.1.2.5";
     };
   };
   macs = {
@@ -289,7 +301,7 @@ in
               "1100"
             ];
           }
-          // lib.optionalAttrs (id == "20") {
+          // lib.optionalAttrs (builtins.hasAttr id vrrpRoutes) {
             # Keepalived owns the floating /24; networkd owns only the node /32.
             KeepConfiguration = "static";
           }
@@ -299,15 +311,16 @@ in
             IPv6Forwarding = false;
           };
         }
-        // lib.optionalAttrs (id == "20") {
+        // lib.optionalAttrs (builtins.hasAttr id vrrpRoutes) {
           # Standby still needs direct ARP and replies without a connected /24.
           routes = [
-            {
-              Destination = "10.1.2.0/24";
-              Scope = "link";
-              PreferredSource = "10.1.2.5";
-              Metric = 100;
-            }
+            (
+              vrrpRoutes.${id}
+              // {
+                Scope = "link";
+                Metric = 100;
+              }
+            )
           ];
         }
         // lib.optionalAttrs (id == "1100") {
