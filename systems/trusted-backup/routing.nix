@@ -22,6 +22,11 @@ in
         matchConfig.MACAddress = "bc:24:11:02:06:05";
         linkConfig.Name = "transit";
       };
+      # Proxmox net2: vmbr1, tag 10, MTU 9000; the guest receives untagged traffic.
+      "10-servers" = {
+        matchConfig.MACAddress = "bc:24:11:02:06:10";
+        linkConfig.Name = "servers";
+      };
     };
     networks = {
       "10-loopback" = {
@@ -76,6 +81,30 @@ in
           }
         ];
       };
+      "10-servers" = {
+        matchConfig.Name = "servers";
+        address = [ "10.1.1.6/32" ];
+        linkConfig = {
+          MTUBytes = "9000";
+          RequiredForOnline = false;
+        };
+        networkConfig = {
+          DHCP = "no";
+          IPv6AcceptRA = false;
+          LinkLocalAddressing = "no";
+          # Keep networkd from removing keepalived's gateway address on reload.
+          KeepConfiguration = "static";
+        };
+        # As for trusted: on-link replies while standing by, never originated.
+        routes = [
+          {
+            Destination = "10.1.1.0/24";
+            Scope = "link";
+            PreferredSource = "10.1.1.6";
+            Metric = 100;
+          }
+        ];
+      };
       "10-transit" = {
         # Carry VLAN 3005 over pve enp66s0f0np0 to beefchunk 1/2/6.
         # Beefchunk VE 3005 owns the peer address 10.254.0.9/31.
@@ -123,13 +152,47 @@ in
         unicast_fault_no_peer
       '';
     };
+    vrrpInstances.SERVERS = {
+      interface = "servers";
+      state = "BACKUP";
+      virtualRouterId = 10;
+      priority = 100;
+      noPreempt = true;
+      unicastSrcIp = "10.1.1.6";
+      unicastPeers = [ "10.1.1.5" ];
+      virtualIps = [
+        {
+          addr = "10.1.1.1/24";
+          dev = "servers";
+        }
+      ];
+      trackInterfaces = [ "transit" ];
+      extraConfig = ''
+        version 2
+        advert_int 1
+        check_unicast_src
+        unicast_fault_no_peer
+      '';
+    };
+    # Both gateways belong to one router at a time, matching VyOS's sync group:
+    # split ownership would route trusted-servers traffic asymmetrically through
+    # two stateful firewalls.
+    extraConfig = ''
+      vrrp_sync_group GATEWAY {
+        group {
+          TRUSTED
+          SERVERS
+        }
+      }
+    '';
   };
 
   services.bird = {
     enable = true;
     package = pkgs.bird2;
     # Beefchunk's TRUSTED-BACKUP inbound list permits only the identity /32
-    # and trusted /24; the latter must come from VRRP's connected address.
+    # and the trusted and servers /24s; those must come from VRRP's connected
+    # addresses.
     config = ''
       router id 10.254.254.2;
 
@@ -153,6 +216,12 @@ in
         ipv4 { import where net = 10.1.2.0/24; };
       }
 
+      protocol direct servers_connected {
+        interface "servers";
+        check link yes;
+        ipv4 { import where net = 10.1.1.0/24; };
+      }
+
       protocol kernel {
         kernel table 100;
         ipv4 {
@@ -167,7 +236,7 @@ in
         check link yes;
         ipv4 {
           import all;
-          export where source = RTS_DEVICE && net ~ [10.1.2.0/24, 10.254.254.2/32];
+          export where source = RTS_DEVICE && net ~ [10.1.2.0/24, 10.1.1.0/24, 10.254.254.2/32];
         };
       }
     '';
@@ -186,6 +255,7 @@ in
           ct state established,related accept
           ip protocol icmp accept
           iifname "trusted" ip saddr 10.1.2.5 ip daddr 10.1.2.6 ip protocol 112 accept
+          iifname "servers" ip saddr 10.1.1.5 ip daddr 10.1.1.6 ip protocol 112 accept
           iifname "transit" ip saddr 10.254.0.9 tcp dport 179 accept
           ip saddr { 10.0.0.0/8, 172.20.0.0/16 } tcp dport 22 accept
           ip saddr 172.20.0.0/16 tcp dport 9100 accept
@@ -199,6 +269,18 @@ in
           iifname "trusted" oifname "transit" ip saddr 10.1.2.0/24 ip daddr { ${network.dnsVip}, ${network.legacyDnsVip} } tcp dport 53 accept
           iifname "trusted" oifname "transit" ip saddr 10.1.2.0/24 ip daddr { ${network.dnsVip}, ${network.legacyDnsVip} } udp dport 53 accept
           iifname "trusted" oifname "transit" ip saddr 10.1.2.0/24 ip daddr { ${network.dnsVip}, ${network.legacyDnsVip} } ip protocol icmp accept
+          # While this VM owns the servers gateway, mirror VyOS's servers policies:
+          # trusted-servers accepts everything, servers-transit admits DNS, NFS and
+          # the Kubernetes load balancers, and transit-servers admits ping, the Nix
+          # cache and the Proxmox UIs. Servers reach trusted only by reply.
+          iifname "trusted" oifname "servers" ip saddr 10.1.2.0/24 accept
+          iifname "servers" oifname "transit" ip saddr 10.1.1.0/24 ip protocol icmp accept
+          iifname "servers" oifname "transit" ip saddr 10.1.1.0/24 ip daddr { ${network.dnsVip}, ${network.legacyDnsVip} } meta l4proto { tcp, udp } th dport 53 accept
+          iifname "servers" oifname "transit" ip saddr { 10.1.1.31, 10.1.1.41 } ip daddr 10.254.1.101 meta l4proto { tcp, udp } th dport { 111, 2049 } accept
+          iifname "servers" oifname "transit" ip saddr 10.1.1.0/24 ip daddr 10.45.0.0/24 accept
+          iifname "transit" oifname "servers" ip daddr 10.1.1.0/24 ip protocol icmp accept
+          iifname "transit" oifname "servers" ip daddr 10.1.1.155 tcp dport 5000 accept
+          iifname "transit" oifname "servers" ip daddr { 10.1.1.31, 10.1.1.32, 10.1.1.41 } tcp dport { 8006, 8007 } accept
         }
       '';
     };

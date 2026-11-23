@@ -30,6 +30,10 @@ ip -n "$router" link add trusted type dummy
 ip -n "$router" link set trusted up
 ip -n "$router" address add 10.1.2.6/32 dev trusted
 ip -n "$router" route add 10.1.2.0/24 dev trusted proto static src 10.1.2.6 metric 100
+ip -n "$router" link add servers type dummy
+ip -n "$router" link set servers up
+ip -n "$router" address add 10.1.1.6/32 dev servers
+ip -n "$router" route add 10.1.1.0/24 dev servers proto static src 10.1.1.6 metric 100
 ip -n "$router" rule add priority 100 from 10.254.254.2/32 table 100
 ip -n "$router" rule add priority 101 from 10.254.0.8/32 table 100
 ip -n "$router" rule add priority 200 table main
@@ -42,6 +46,7 @@ protocol static fixture {
   ipv4;
   route 192.0.2.53/32 blackhole;
   route 10.1.2.0/24 blackhole;
+  route 10.1.1.0/24 blackhole;
   route 0.0.0.0/0 blackhole;
 }
 protocol bgp backup {
@@ -65,6 +70,8 @@ wait_for() {
 }
 established() { birdc -s "$work/core.sock" show protocols all backup | grep -q 'BGP state:.*Established'; }
 advertised() { birdc -s "$work/core.sock" show route protocol backup | grep -q '10.1.2.0/24'; }
+servers_advertised() { birdc -s "$work/core.sock" show route protocol backup | grep -q '10.1.1.0/24'; }
+servers_withdrawn() { ! servers_advertised; }
 withdrawn() { ! advertised; }
 identity_advertised() { birdc -s "$work/core.sock" show route protocol backup | grep -q '10.254.254.2/32'; }
 dns_installed() { ip -n "$router" route show table 100 192.0.2.53/32 | grep -q 'via 10.254.0.9'; }
@@ -95,6 +102,15 @@ ip -n "$router" address del 10.1.2.1/24 dev trusted
 wait_for withdrawn
 wait_for routed_via_core
 ip -n "$router" route show 10.1.2.0/24 | grep -q 'dev trusted proto static'
+# The servers gateway follows the same connected-only rule.
+wait_for servers_withdrawn
+test -z "$(birdc -s "$work/router.sock" show route protocol servers_connected | grep '10.1.1.0/24' || true)"
+ip -n "$router" address add 10.1.1.1/24 dev servers
+wait_for servers_advertised
+ip -n "$router" address del 10.1.1.1/24 dev servers
+wait_for servers_withdrawn
+ip -n "$router" route show 10.1.1.0/24 | grep -q 'dev servers proto static'
+
 identity_advertised
-test -z "$(birdc -s "$work/core.sock" show route protocol backup | grep -E '10.1.2.6/32|0.0.0.0/0|192.0.2.53/32' || true)"
-echo 'PASS: connected-only origination, withdrawal, stable identity, standby ARP route, fabric route import, and no route leaks'
+test -z "$(birdc -s "$work/core.sock" show route protocol backup | grep -E '10.1.2.6/32|10.1.1.6/32|0.0.0.0/0|192.0.2.53/32' || true)"
+echo 'PASS: connected-only origination of the trusted and servers /24s, withdrawal, stable identity, standby ARP route, fabric route import, and no route leaks'
