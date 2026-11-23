@@ -94,14 +94,17 @@ in
   services.keepalived = {
     enable = true;
     # Before first startup, verify VyOS is MASTER and its advertisements reach
-    # trusted through vmbr1. Both peers start BACKUP with preemption disabled.
+    # trusted through vmbr1. Both peers start BACKUP. This VM never preempts; the
+    # primary reclaims the VIP 180 seconds after its keepalived starts, since this
+    # VM has no WAN.
     vrrpInstances.TRUSTED = {
       interface = "trusted";
       state = "BACKUP";
       virtualRouterId = 20;
       priority = 100;
-      # Handback: start VyOS keepalived, stop this service and its boot-delay
-      # timer, verify VyOS owns the VIP, then restart this service.
+      # Manual handback, if the primary does not preempt: stop this service,
+      # verify the primary owns the VIP, then start this service again. While
+      # this VM holds the VIP, reach VyOS by SSH only at 10.1.2.5.
       noPreempt = true;
       unicastSrcIp = "10.1.2.6";
       unicastPeers = [ "10.1.2.5" ];
