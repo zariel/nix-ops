@@ -11,6 +11,11 @@ in
 
   systemd.network = {
     enable = true;
+    # BIRD installs the fabric routes in table 100. By default networkd deletes
+    # routes it does not own when it restarts, and BIRD only reinstalls them at
+    # its next kernel scan, so a deploy that restarted networkd broke replies
+    # from the routed identity for about 25 seconds and deploy-rs rolled back.
+    config.networkConfig.ManageForeignRoutes = false;
     links = {
       # Proxmox net0: vmbr1, tag 20; the guest receives untagged traffic.
       "10-trusted" = {
@@ -174,6 +179,11 @@ in
         unicast_fault_no_peer
       '';
     };
+    # Listen before electing: a cold start waits this long for the primary's
+    # advertisements before it can become MASTER.
+    extraGlobalDefs = ''
+      vrrp_startup_delay 10
+    '';
     # Both gateways belong to one router at a time, matching VyOS's sync group:
     # split ownership would route trusted-servers traffic asymmetrically through
     # two stateful firewalls.
@@ -186,6 +196,24 @@ in
       }
     '';
   };
+
+  # A deploy must never make this standby claim the gateways. Reloading keeps
+  # the running instances in BACKUP instead of re-entering startup, where a
+  # missed advertisement would make them MASTER, and the instances start only
+  # once their interfaces are configured.
+  systemd.services.keepalived =
+    let
+      ready = map (interface: "systemd-networkd-wait-online@${interface}.service") [
+        "trusted"
+        "servers"
+        "transit"
+      ];
+    in
+    {
+      requires = ready;
+      after = ready;
+      reloadIfChanged = true;
+    };
 
   services.bird = {
     enable = true;
