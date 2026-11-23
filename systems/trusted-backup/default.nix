@@ -23,6 +23,15 @@ in
   services.qemuGuest.enable = true;
 
   boot.initrd.availableKernelModules = [ "virtio_scsi" ];
+  # The 8 GB image filled up during a deploy on 2026-11-23; the Proxmox disk is
+  # now 32 GB. Grow the root partition to the disk at boot (autoResize below
+  # then grows the filesystem), and drop old generations so deploys keep fitting.
+  boot.growPartition = true;
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 30d";
+  };
   boot.kernelParams = [ "console=ttyS0,115200" ];
   # The image must boot without installer-created EFI firmware variables.
   boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
