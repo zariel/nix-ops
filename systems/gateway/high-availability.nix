@@ -13,8 +13,6 @@ in
       state = "BACKUP";
       virtualRouterId = 20;
       priority = 200;
-      # A recovered primary waits for an intentional handback from the backup.
-      noPreempt = true;
       unicastSrcIp = "10.1.2.5";
       unicastPeers = [ "10.1.2.6" ];
       virtualIps = [
@@ -27,6 +25,9 @@ in
       extraConfig = ''
         version 2
         advert_int 1
+        # trusted-backup has no WAN, so a recovered primary reclaims the VIP once
+        # networkd, nftables and BGP have had time to come up.
+        preempt_delay 180
         check_unicast_src
         unicast_fault_no_peer
       '';

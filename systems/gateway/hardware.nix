@@ -15,6 +15,13 @@
     "ifb"
     "sch_cake"
   ];
+  # COM1 is the break-glass console on the OOB Avocent's port 2. The kernel and
+  # a serial getty use it at 115200; tty0 stays last so PiKVM shows systemd's
+  # boot status and a getty too.
+  boot.kernelParams = [
+    "console=ttyS0,115200"
+    "console=tty0"
+  ];
   # Installation contract: create these labels on the NEW NixOS disk.
   # These deliberately do not point at VyOS's persistence partition.
   fileSystems."/" = {

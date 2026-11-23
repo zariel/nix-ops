@@ -85,11 +85,14 @@ def discovery(label):
 assert not owns(primary, "bond0.20")
 discovery("backup-vip")
 
-# Intentional handback; the higher priority primary must not preempt on recovery.
-backup.succeed("systemctl stop keepalived")
-primary.wait_until_succeeds("ip -4 addr show dev bond0.20 | grep '10.1.2.1/24'")
+# The backup has no WAN, so the recovered primary reclaims the VIP once its
+# 180-second preempt delay expires, without a handback; it held off above.
+primary.wait_until_succeeds("ip -4 addr show dev bond0.20 | grep '10.1.2.1/24'", timeout=240)
+backup.wait_until_succeeds("! ip -4 addr show dev trusted | grep -q '10.1.2.1/24'", timeout=10)
 path("10.254.0.0")
-backup.succeed("systemctl start keepalived")
+
+# A restarted backup does not take the VIP back.
+backup.succeed("systemctl restart keepalived")
 backup.sleep(3)
 assert not owns(backup, "trusted")
 discovery("primary-vip")

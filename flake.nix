@@ -148,6 +148,9 @@
           gamemode-waybar = pkgs.callPackage ./packages/gamemode-waybar/package.nix { };
           routerctl = pkgs.callPackage ./packages/routerctl/package.nix { };
         }
+        // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          gateway-installer = self.nixosConfigurations.gateway-installer.config.system.build.isoImage;
+        }
       );
 
       devShells = forAllSystems (system: {
@@ -166,6 +169,14 @@
       nixosConfigurations = {
         trusted-backup = mkSystem { name = "trusted-backup"; };
         gateway = mkSystem { name = "gateway"; };
+        gateway-installer = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs.gatewaySystem = self.nixosConfigurations.gateway.config.system.build.toplevel;
+          modules = [
+            "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
+            ./systems/gateway-installer
+          ];
+        };
         dns1 = mkSystem {
           name = "dns1";
           extraModules = [ ./roles/server ];

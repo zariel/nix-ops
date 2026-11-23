@@ -14,7 +14,8 @@ remains on `main`.
 
 The NixOS replacement retains VyOS's trusted VRRP identity: permanent
 `10.1.2.5/32`, floating `10.1.2.1/24`, backup peer `10.1.2.6`, VRID 20 and
-priority 200 with preemption disabled. Stop VyOS before starting the NixOS
+priority 200, reclaiming the VIP from trusted-backup 180 seconds after
+keepalived starts because the backup has no WAN. Stop VyOS before starting the NixOS
 primary on the shared network; they must not run with the same node address.
 
 ## Ownership and maintenance
@@ -527,6 +528,16 @@ Check firmware mode and generate/review the hardware configuration on the target
 before installing. Do not format or reuse the current VyOS persistence partition
 without a separate backup and an explicit cutover plan. Keep a bootable VyOS disk
 for rollback if possible.
+
+The installer is `nix build .#gateway-installer`, a minimal NixOS ISO that
+carries the complete gateway system closure, because a failed gateway leaves
+the network without the WAN a binary cache needs. On 2026-11-22 an installer
+could not be built during a gateway outage for exactly that reason. Rebuild
+and rewrite the USB stick after each gateway change that should be installable.
+It accepts the operator's SSH key as root and has consoles on tty0 (PiKVM) and
+COM1 at 115200 (Avocent port 2). After partitioning and mounting the new root
+at `/mnt` and its ESP at `/mnt/boot`, `install-gateway` runs `nixos-install`
+with the embedded system, which needs no network.
 
 Before the first NixOS boot:
 
