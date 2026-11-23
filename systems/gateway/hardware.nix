@@ -22,6 +22,14 @@
     "console=ttyS0,115200"
     "console=tty0"
   ];
+  # Log out idle shells after 15 minutes, so a console login left open on the
+  # PiKVM or the Avocent does not stay logged in. Like VyOS's system login
+  # timeout, this applies to every interactive bash, SSH included.
+  programs.bash.interactiveShellInit = ''
+    TMOUT=900
+    readonly TMOUT
+    export TMOUT
+  '';
   # Installation contract: create these labels on the NEW NixOS disk.
   # These deliberately do not point at VyOS's persistence partition.
   fileSystems."/" = {
