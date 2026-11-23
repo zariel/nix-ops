@@ -96,7 +96,8 @@ in
   programs.claude-code = {
     enable = true;
     package = llmAgentPackages.claude-code;
-    inherit (agentConfig) context;
+    context = agentConfig.context + builtins.readFile ./apps/claude-code/delegation.md;
+    agentsDir = ./apps/claude-code/agents;
     skills = {
       inherit (agentConfig.skills) socratic-tutor;
     };
