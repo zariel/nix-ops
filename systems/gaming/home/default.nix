@@ -167,5 +167,5 @@ in
     gitCredentialHelper.enable = true;
   };
 
-  programs.nh.osFlake = "${home}/nix-ops#nixosConfigurations.gaming";
+  programs.nh.osFlake = "${home}/infra/nix-ops#nixosConfigurations.gaming";
 }
