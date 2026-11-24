@@ -279,6 +279,10 @@ in
       binPath = "${pkgs.niri}/bin/niri-session";
     };
   };
+  # Shells skip home-manager's session variables while this guard is set, so
+  # exporting it into the session would keep login-time values in every new
+  # terminal after a switch.
+  environment.sessionVariables.UWSM_NEVER_EXPORT_VARNAMES = "__HM_SESS_VARS_SOURCED";
   programs.xwayland.enable = true;
 
   environment.etc."xdg/menus/niri-session-applications.menu".source =
