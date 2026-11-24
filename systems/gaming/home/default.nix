@@ -106,7 +106,12 @@ in
     mutableSettings = true;
     settings = {
       effortLevel = "high";
-      permissions.defaultMode = "auto";
+      permissions = {
+        defaultMode = "auto";
+        allow = [ "Bash(git worktree remove:*)" ];
+        # --force discards uncommitted changes in the worktree.
+        ask = [ "Bash(git worktree remove --force:*)" ];
+      };
       spinnerTipsEnabled = false;
       attribution = {
         commit = "";
