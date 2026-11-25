@@ -103,6 +103,7 @@ in
     formatCommitMessage
     gcc
     glow
+    nodejs-slim # Runtime for the Codex plugin's Claude Code hooks and commands.
   ];
 
   home.shellAliases = {
@@ -135,6 +136,11 @@ in
     # Merge into the existing settings so changes made through /config persist.
     mutableSettings = true;
     settings = {
+      extraKnownMarketplaces.openai-codex.source = {
+        source = "github";
+        repo = "openai/codex-plugin-cc";
+      };
+      enabledPlugins."codex@openai-codex" = true;
       effortLevel = "high";
       permissions = {
         defaultMode = "auto";
