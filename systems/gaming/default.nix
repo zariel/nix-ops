@@ -76,6 +76,11 @@ in
   services.power-profiles-daemon.enable = true;
 
   nix = {
+    # Local builds run while the desktop is in use, so they yield to it for
+    # both CPU and disk.
+    daemonCPUSchedPolicy = "idle";
+    daemonIOSchedClass = "idle";
+
     distributedBuilds = true;
     buildMachines = [
       {
