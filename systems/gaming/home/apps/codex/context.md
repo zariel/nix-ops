@@ -1,7 +1,8 @@
 # Tooling
 
-- Use `nix run`, `nix shell`, or `nix develop` to access required tooling that is not already available.
-- Prefer the repository's development shell when provided; otherwise use packages from `nixpkgs` for ad hoc tooling.
+- Use `nix run`, `nix shell`, or `nix develop` to access required tooling that is not already available. Do not install tools with `pip`, `npm -g`, `cargo install` or similar.
+- Prefer the repository's development shell when provided, such as a `devShells` output in `flake.nix` or `use flake` in `.envrc`: run commands through `nix develop -c <command>` so the versions match the repository's.
+- Otherwise use packages from `nixpkgs` for ad hoc tooling, such as `nix shell nixpkgs#python3 -c python3 ...`.
 
 # Version Control
 
