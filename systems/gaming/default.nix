@@ -557,6 +557,32 @@ in
   };
   programs.virt-manager.enable = true;
 
+  # libvirt places every guest under machine.slice through systemd-machined.
+  # Test VMs share the machine with the desktop, so the slice gets a small
+  # share of contended CPU and IO; idle capacity stays usable. MemoryHigh
+  # leaves about half of the 31 GiB for the session and page cache, and
+  # reclaims guest pages instead of killing guests.
+  systemd.slices.machine.sliceConfig = {
+    CPUWeight = 20;
+    IOWeight = 20;
+    MemoryHigh = "14G";
+    # Under sustained memory pressure oomd kills a guest here before the
+    # session. Only this slice and katl-dev.slice are oomd candidates.
+    ManagedOOMMemoryPressure = "kill";
+  };
+
+  # Agent and build work started through claude-dev runs in this user slice, so
+  # everything it spawns inherits the limits.
+  systemd.user.slices.katl-dev = {
+    description = "Katl development agents and builds";
+    sliceConfig = {
+      CPUWeight = 30;
+      IOWeight = 30;
+      MemoryHigh = "10G";
+      ManagedOOMMemoryPressure = "kill";
+    };
+  };
+
   virtualisation.podman = {
     enable = true;
     dockerCompat = true;

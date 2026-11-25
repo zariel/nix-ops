@@ -46,6 +46,35 @@ let
         ${pkgs.lib.getExe' beadsPackage "bd"} "$@"
     '';
   };
+
+  # Rootless podman with the systemd cgroup manager puts containers in their own
+  # libpod scopes under the user manager's user.slice, outside the caller's
+  # slice. The cgroupfs manager creates them beneath the calling scope instead,
+  # which claude-dev delegates for that purpose.
+  katlDevContainersConf = pkgs.writeText "katl-dev-containers.conf" ''
+    [engine]
+    cgroup_manager = "cgroupfs"
+  '';
+
+  claudeDev = pkgs.writeShellApplication {
+    name = "claude-dev";
+
+    runtimeInputs = [
+      pkgs.systemd
+    ];
+
+    text = ''
+      export CONTAINERS_CONF_OVERRIDE=${katlDevContainersConf}
+      exec systemd-run \
+        --user \
+        --scope \
+        --quiet \
+        --collect \
+        --slice=katl-dev.slice \
+        --property=Delegate=yes \
+        ${pkgs.lib.getExe config.programs.claude-code.package} "$@"
+    '';
+  };
 in
 {
   imports = [
@@ -70,6 +99,7 @@ in
     kubectl
     mkbrr
     bd
+    claudeDev
     formatCommitMessage
     gcc
     glow
