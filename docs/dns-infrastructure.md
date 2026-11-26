@@ -118,13 +118,13 @@ DNSdist performs "lazy" health checks on backends:
 
 Each DNS VM connects to its own `/31` VLAN on the Brocade. FastIron 9 automatically associates a VE interface with the VLAN (no explicit `router-interface ve` command needed) once the `interface ve <id>` stanza exists.
 
-Example for `dns1` (repeat for `dns2`/`dns3` with the appropriate VLAN ID, switch port, and `/31` addresses):
+Example for `dns1` (repeat for `dns2`/`dns3` with the appropriate VLAN ID, hypervisor trunk, and `/31` addresses):
 
 ```text
 conf t
 !
 vlan 3101 name DNS1-PTP
- tagged ethernet 1/2/6          ! Port facing the dns1 Proxmox NIC
+ tagged ethernet <port>         ! Trunk to the hypervisor hosting dns1; NetBox records which
  exit
 !
 interface ve 3101
@@ -135,7 +135,7 @@ interface ve 3101
 
 Key points:
 - Use one VLAN/VE per DNS node so each link is isolated.
-- Set the Proxmox port to **untagged** in that VLAN; other VLANs continue to be trunked on different switch ports.
+- Tag the VLAN on the trunk to the hypervisor that hosts the VM; the hypervisor bridges it to the VM's NIC.
 - In the upstream BGP configuration (local AS `65001`), configure an eBGP neighbor for each DNS node using remote AS `65110`; verify that the switch learns every configured IPv4 VIP as a `/32` from all healthy nodes.
 
 ### 5. Backend Services

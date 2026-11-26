@@ -9,9 +9,10 @@ bond is broken. Everything else stays off it. The pve IPMI remains on servers
 VLAN 10, and management VLAN 100 becomes UniFi-only.
 
 VLAN 254 (`10.1.254.0/24`) is a flat L2 segment on an unmanaged 8-port Netgear,
-uplinked untagged to Beefchunk `1/1/13`. Beefchunk routes it through `ve254` at
-`10.1.254.1`, so it does not depend on the gateway. Every device uses a static
-address, because the gateway's DHCP service may be the thing that is down.
+uplinked untagged to a Beefchunk access port. Beefchunk routes it through
+`ve254` at `10.1.254.1`, so it does not depend on the gateway. Every device
+uses a static address, because the gateway's DHCP service may be the thing
+that is down.
 
 The TESmart switch belongs here because PiKVM drives it over TCP port 5000 to
 choose which host it shows. On servers VLAN 10 that control path would cross
@@ -189,7 +190,7 @@ arrive through the VRF, and replies leave through it. The firewall accepts only
 SSH on that interface and no zone pair forwards to or from it. That protects
 against misconfiguration, not compromise. A compromised gateway gains nothing
 from the cable, because it already owns trusted addresses and `OOB-OUT` admits
-trusted to every OOB device, so the NIC stays cabled to Netgear port 6: it is the
+trusted to every OOB device, so the NIC stays cabled to the OOB switch: it is the
 way into the OOB segment when Beefchunk is down. PiKVM provides the gateway's
 console.
 
@@ -213,8 +214,8 @@ on `ve254`), `.10` (202), `.20` (206), `.30` (203), `.40` (204, on
 stays active until the device actually moves, so NetBox keeps describing the
 live network; its OOB address becomes active once it answers there.
 
-The TESmart and PiKVM are both powered from the rear socket bar on PDU outlet
-12, which also feeds an extension bar. Cycling outlet 12 therefore restarts
+The TESmart and PiKVM share a PDU outlet, through the rear socket bar
+(NetBox records the power cabling). Cycling that outlet therefore restarts
 the console path as well as the TESmart; restart the TESmart alone by
 unplugging its adapter at the bar.
 
@@ -224,17 +225,17 @@ The step-by-step rollout, with the exact Beefchunk commands for operator
 approval and the dependent changes in each repository, is in the infra
 workspace at `docs/oob-rollout.md`. In outline:
 
-1. **Uplink.** Cable the Netgear to `1/1/13`, put `1/1/13` in VLAN 254, bind
+1. **Uplink.** Cable the Netgear to Beefchunk, put that port in VLAN 254, bind
    `OOB-IN` and `OOB-OUT`, and allow trusted to reach the prefix on both
    gateways. A recovery laptop on the Netgear verifies routing and the ACLs
    before any device moves.
 2. **PiKVM and TESmart, together.** Store the TESmart's OOB settings with the
    operator's `tesmart` tool while it is still reachable at `10.1.1.51`, then
    move both cables to the Netgear, power-cycle the TESmart, re-address PiKVM
-   and point its TESmart driver at `10.1.254.20`. Free `1/1/12` and `1/1/18`
-   and remove the PiKVM→TESmart gateway rule.
-3. **PDU.** Give it a static OOB address and NTP server and move its cable from
-   `1/1/10`. Update the certificate job, SNMP target and NetworkPolicy, and
+   and point its TESmart driver at `10.1.254.20`. Clear their old Beefchunk
+   ports and remove the PiKVM→TESmart gateway rule.
+3. **PDU.** Give it a static OOB address and NTP server and move its cable to
+   the Netgear. Update the certificate job, SNMP target and NetworkPolicy, and
    remove its DHCP reservation and gateway rules.
 4. **Avocent.** Address it from its console port, cable it to the Netgear and
    its serial ports to the ICX consoles.
