@@ -23,6 +23,7 @@ let
     "grafana"
     "home-assistant"
     "netbox"
+    "proxmox"
     "unifi"
   ] pocketIdServer;
 
