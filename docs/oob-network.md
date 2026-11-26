@@ -203,21 +203,15 @@ replaced, and a rollback to it uses PiKVM. The NixOS
 gateway (`systems/gateway` on the `nixos-gateway` branch) configures `rescue0`
 as described here.
 
-## NetBox state
+## NetBox records
 
-NetBox is the allocation authority. It records VLAN 254 `OOB` (id 89), prefix
-`10.1.254.0/24` (id 164), the routing range `.1`–`.9` (IP range id 35), the
-planned `oob-switch` (id 165) and `console` (id 166) devices, Beefchunk's
-`ve254` (interface 365), and the addresses in the table above: `.1` (id 200,
-on `ve254`), `.10` (202), `.20` (206), `.30` (203), `.40` (204, on
-`console:eth0`), `.50` (201) and `.100` (207). Each device's existing record
-stays active until the device actually moves, so NetBox keeps describing the
-live network; its OOB address becomes active once it answers there.
+NetBox is the source of truth for the OOB network: VLAN 254, its prefix and
+routing range, the OOB devices and their addresses, and how each device is
+cabled and powered. Read those records there rather than from this document.
 
-The TESmart and PiKVM share a PDU outlet, through the rear socket bar
-(NetBox records the power cabling). Cycling that outlet therefore restarts
-the console path as well as the TESmart; restart the TESmart alone by
-unplugging its adapter at the bar.
+The TESmart and PiKVM share a PDU outlet, through the rear socket bar.
+Cycling that outlet therefore restarts the console path as well as the
+TESmart; restart the TESmart alone by unplugging its adapter at the bar.
 
 ## Migration
 
