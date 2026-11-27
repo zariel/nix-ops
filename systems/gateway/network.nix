@@ -344,6 +344,10 @@ in
             EmitDNS = false;
           };
           ipv6Prefixes = [ { Prefix = "fd74:f571:d3bd:1060::/64"; } ];
+          ipv6RoutePrefixes = [
+            { Route = "fd74:f571:d3bd:1061::/64"; }
+            { Route = "fd74:f571:d3bd:20::/64"; }
+          ];
         }
         //
           lib.optionalAttrs
